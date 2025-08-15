@@ -2,7 +2,7 @@
  * @Author: Ray lighthouseinmind@yeah.net
  * @Date: 2025-05-06 09:11:01
  * @LastEditors: Ray lighthouseinmind@yeah.net
- * @LastEditTime: 2025-08-15 15:19:57
+ * @LastEditTime: 2025-08-15 15:24:11
  * @FilePath: /water/src/app.module.ts
  * @Description: 这是默认设置,请设置`customMade`, 打开koroFileHeader查看配置 进行设置: https://github.com/OBKoro1/koro1FileHeader/wiki/%E9%85%8D%E7%BD%AE
  */
@@ -57,10 +57,10 @@ import { DeepTimezoneMiddleware } from './common/timezone.middleware';
   })
   ],
   providers: [
-    {
-      provide: APP_FILTER,
-      useClass: AllExceptionFilter,
-    },
+    // {
+    //   provide: APP_FILTER,
+    //   useClass: AllExceptionFilter,
+    // },
   ],
 })
 export class AppModule {
