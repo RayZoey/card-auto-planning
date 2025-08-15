@@ -75,13 +75,17 @@ model RolePermissionRelation {
 
 //  用户
 model User {
-  id         Int      @id @default(autoincrement())
-  username   String?  @db.VarChar(80)
-  avatar     String?  @db.VarChar(200)
-  phone      String?  @unique @db.VarChar(20)
-  open_id    String   @db.VarChar(80)
-  point      Int      @default(0) //  总积分
-  created_at DateTime @default(now())
+  id             Int              @id @default(autoincrement())
+  username       String?          @db.VarChar(80)
+  avatar         String?          @db.VarChar(200)
+  phone          String?          @unique @db.VarChar(20)
+  open_id        String           @db.VarChar(80)
+  point          Int              @default(0) //  总积分
+  created_at     DateTime         @default(now())
+  UserPlan       UserPlan[]
+  PresetsTaskTag PresetsTaskTag[]
+  UserTask       UserTask[]
+  UserTaskGroup  UserTaskGroup[]
 
   @@map("user")
 }
@@ -96,4 +100,164 @@ model SystemConfig {
   updated_at DateTime @default(now()) @updatedAt
 
   @@map("system_config")
+}
+
+//  学习计划
+model UserPlan {
+  id      Int        @id @default(autoincrement())
+  user_id Int
+  user    User       @relation(fields: [user_id], references: [id])
+  status  PlanStatus @default(PROGRESS) //  执行状态
+
+  planned_start_time DateTime //  计划开始时间
+  planned_end_time   DateTime //  计划结束时间
+
+  created_at    DateTime        @default(now())
+  updated_at    DateTime        @default(now()) @updatedAt
+  UserTaskGroup UserTaskGroup[]
+
+  @@map("user_plan")
+}
+
+enum PlanStatus {
+  PROGRESS // 进行中
+  PAUSE //  暂停
+  COMPLETE //  完成
+
+  @@map("plan_status")
+}
+
+//  任务tag，创建用户时自带五个类目,可自行维护增加变更
+model PresetsTaskTag {
+  id       Int     @id @default(autoincrement())
+  user_id  Int
+  user     User    @relation(fields: [user_id], references: [id])
+  tag_name String  @db.VarChar(80)
+  tag_icon String? @db.VarChar(200)
+
+  created_at DateTime @default(now())
+  updated_at DateTime @default(now()) @updatedAt
+
+  @@map("task_tag")
+}
+
+//  平台预设任务集
+model PlatformTaskGroup {
+  id           Int            @id @default(autoincrement())
+  name         String         @db.VarChar(80) //  任务集名称
+  PlatformTask PlatformTask[]
+
+  created_at DateTime @default(now())
+  updated_at DateTime @default(now()) @updatedAt
+
+  @@map("platform_task_group")
+}
+
+//  平台预设单个任务
+model PlatformTask {
+  id                   Int               @id @default(autoincrement())
+  name                 String            @db.VarChar(80) //  任务名称
+  task_group_id        Int
+  group                PlatformTaskGroup @relation(fields: [task_group_id], references: [id])
+  priority             Int // 优先级
+  background           String?           @db.VarChar(10) //  背景色
+  suggested_time_start String?           @db.VarChar(20) //  建议时段开始
+  suggested_time_end   String?           @db.VarChar(20) //  建议时段结束
+  remark               String?           @db.Text //  备注
+  annex_type           TaskAnnexType? //  附件类型
+  annex                String?           @db.VarChar(80) //  附件地址
+  timing_type          TaskTimingType    @default(POMODORO) //  计时类型
+  occupation_time      Int? //  所占耗时(min)
+  can_divisible        Boolean           @default(false) //  是否可分割
+
+  created_at DateTime @default(now())
+  updated_at DateTime @default(now()) @updatedAt
+
+  @@map("platform_task")
+}
+
+enum TaskAnnexType {
+  IMG // 图片
+  FILE //  文件
+  URL //  链接
+
+  @@map("task_annex_type")
+}
+
+enum TaskTimingType {
+  POMODORO //  番茄钟
+  FREE_TIMING //  自由计时
+  UNTIMING //  不计时
+
+  @@map("task_timing_type")
+}
+
+//  用户任务集
+model UserTaskGroup {
+  id       Int        @id @default(autoincrement())
+  name     String     @db.VarChar(80) //  任务集名称
+  user_id  Int
+  user     User       @relation(fields: [user_id], references: [id])
+  plan_id  Int
+  plan     UserPlan   @relation(fields: [plan_id], references: [id])
+  UserTask UserTask[]
+
+  created_at DateTime @default(now())
+  updated_at DateTime @default(now()) @updatedAt
+
+  @@map("user_task_group")
+}
+
+//  用户单个任务
+model UserTask {
+  id                   Int            @id @default(autoincrement())
+  name                 String         @db.VarChar(80) //  任务名称
+  task_group_id        Int
+  group                UserTaskGroup  @relation(fields: [task_group_id], references: [id])
+  user_id              Int
+  user                 User           @relation(fields: [user_id], references: [id])
+  priority             Int // 优先级
+  background           String?        @db.VarChar(10) //  背景色
+  suggested_time_start String?        @db.VarChar(20) //  建议时段开始
+  suggested_time_end   String?        @db.VarChar(20) //  建议时段结束
+  remark               String?        @db.Text //  备注
+  annex_type           TaskAnnexType? //  附件类型
+  annex                String?        @db.VarChar(80) //  附件地址
+  timing_type          TaskTimingType @default(POMODORO) //  计时类型
+  occupation_time      Int? //  所占耗时(min)
+  actual_time          Int? // 实际耗时(min)
+  actual_time_start    DateTime? // 实际开始时间
+  actual_time_end      DateTime? // 实际结束时间
+  status               TaskStatus     @default(WAITING)
+  can_divisible        Boolean        @default(false) //  是否可分割
+
+  created_at DateTime @default(now())
+  updated_at DateTime @default(now()) @updatedAt
+
+  @@map("user_task")
+}
+
+enum TaskStatus {
+  WAITING //  等待开始
+  PROGRESS // 进行中
+  PAUSE //  暂停
+  COMPLETE //  完成
+  SKIP  //  跳过
+
+  @@map("task_status")
+}
+
+//  联系学姐
+model Teacher {
+  id      Int     @id @default(autoincrement())
+  name    String  @db.VarChar(80) //  任务名称
+  avatar  String? @db.VarChar(200)
+  desc    String  @db.Text //  个人简介
+  contact String  @db.VarChar(80) //  联系方式
+  order   Int? //  排序
+
+  created_at DateTime @default(now())
+  updated_at DateTime @default(now()) @updatedAt
+
+  @@map("teacher")
 }
