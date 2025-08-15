@@ -1,0 +1,9 @@
+DATABASE_URL="mysql://dev_glzt:Xw5>&2j2u2Rq@192.168.4.220:3306/aw_new_hsdr?&connection_limit=40"
+SECRET="secretKey"
+
+MINI_APPID="wx63a0ac7402ac1d94"
+MINI_APPSECRET="fe2cb01d9e1f4f3f0b779540b573ffe6"
+MINI_MCHID="1678917577"
+
+LOG_DIR="/var/log/card"
+NODE_ENV=production

@@ -1,0 +1,25 @@
+#DATABASE_URL="mysql://root:@127.0.0.1:3306/card"
+DATABASE_URL="mysql://root:EPx@pDXa7kcAfy@47.108.169.183:3306/card?&connection_limit=40"
+SECRET="secretKey"
+
+API_URL = "https://api.zikanfs.cn"
+
+ENDPOINT = "oss-cn-chengdu.aliyuncs.com"
+ACCESSKEYID = "LTAI5tAZ6yZRDFdZVBKqNdKe"
+ACCESSKEYSECRET = "GBIMFsYtkl1SO6B1QkrcmUS7oL6F4X"
+BUCKET = "zikanfs"
+REGION = "oss-cn-chengdu"
+
+OSS_URL = "https://zikanfs.oss-cn-chengdu.aliyuncs.com"
+
+MINI_APPID = "wx63a0ac7402ac1d94"
+MINI_APPSECRET = "fe2cb01d9e1f4f3f0b779540b573ffe6"
+MINI_MCHID = "1678917577"
+
+PAY_NOTIFY_URL = "https://api.zikanfs.cn/wechat/payment/notify"
+GET_SELF_TOKEN_URL = "https://api.zikanfs.cn/auth/access-tokens"
+CARD_PURCHASE_PAYMENT_URL = "/card-purchase-order/update-pay-status-by-order-no"
+MEMBER_PAYMENT_URL = "/member-order/update-pay-status-by-order-no"
+TRANSFER_PAYMENT_URL = "/transfer-order/update-pay-status-by-order-no"
+
+FAKE_TOKEN = "KYNQMFQ7gZcEGp4omBwMRsiOHuWJBVpJi5zjXtYQDSKPC3B0F4CEZm"

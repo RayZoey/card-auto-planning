@@ -1,0 +1,99 @@
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+  //    previewFeatures = ["selectRelationCount", "referentialActions"]
+}
+
+//  账户
+model Account {
+  id                Int       @id @default(autoincrement())
+  username          String    @unique @db.VarChar(40)
+  display_name      String    @db.VarChar(40)
+  password          String    @db.VarChar(200)
+  role_id           Int
+  role              Role      @relation(fields: [role_id], references: [id])
+  is_locked         Boolean   @default(false)
+  latest_login_ip   String?
+  latest_login_time DateTime?
+  phone             String?   @unique @db.VarChar(20)
+
+  created_at DateTime @default(now())
+
+  @@map("r_account")
+}
+
+//  权限
+model Permission {
+  id                     Int                      @id @default(autoincrement())
+  name                   String                   @unique @db.VarChar(40)
+  desc                   String                   @db.VarChar(40)
+  permission_type        PermissionType           @default(MENU) //  权限类型
+  is_locked              Boolean                  @default(false)
+  created_at             DateTime                 @default(now())
+  deleted_at             DateTime?
+  RolePermissionRelation RolePermissionRelation[]
+
+  @@map("r_permission")
+}
+
+enum PermissionType {
+  MENU //  菜单
+  BUTTON //  按钮
+  OTHER //  其它
+
+  @@map("permission_type")
+}
+
+//  角色
+model Role {
+  id                     Int                      @id @default(autoincrement())
+  name                   String                   @unique @db.VarChar(40)
+  desc                   String                   @db.VarChar(40)
+  is_locked              Boolean                  @default(false)
+  account                Account[] //  下属用户
+  deleted_at             DateTime?
+  RolePermissionRelation RolePermissionRelation[]
+
+  @@map("r_role")
+}
+
+//  权限与角色关联关系
+model RolePermissionRelation {
+  permission_id Int //  权限id
+  permission    Permission @relation(fields: [permission_id], references: [id])
+
+  role_id Int //  角色id
+  role    Role @relation(fields: [role_id], references: [id])
+
+  @@unique([permission_id, role_id])
+  @@map("r_role_permission_relation")
+}
+
+//  用户
+model User {
+  id         Int      @id @default(autoincrement())
+  username   String?  @db.VarChar(80)
+  avatar     String?  @db.VarChar(200)
+  phone      String?  @unique @db.VarChar(20)
+  open_id    String   @db.VarChar(80)
+  point      Int      @default(0) //  总积分
+  created_at DateTime @default(now())
+
+  @@map("user")
+}
+
+//  后台全局系统配置
+model SystemConfig {
+  id         Int      @id @default(autoincrement())
+  name       String   @unique @db.VarChar(80)
+  val        String   @db.Text
+  remark     String?  @db.VarChar(20)
+  created_at DateTime @default(now())
+  updated_at DateTime @default(now()) @updatedAt
+
+  @@map("system_config")
+}
