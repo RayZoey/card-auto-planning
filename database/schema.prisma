@@ -240,8 +240,8 @@ model UserTaskGroup {
 model UserTask {
   id                   Int            @id @default(autoincrement())
   name                 String         @db.VarChar(80) //  任务名称
-  task_group_id        Int
-  group                UserTaskGroup  @relation(fields: [task_group_id], references: [id])
+  task_group_id        Int?
+  group                UserTaskGroup?  @relation(fields: [task_group_id], references: [id])
   user_id              Int
   user                 User           @relation(fields: [user_id], references: [id])
   priority             Int // 优先级
