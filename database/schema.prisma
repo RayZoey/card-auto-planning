@@ -102,6 +102,33 @@ model SystemConfig {
   @@map("system_config")
 }
 
+//  学习计划模版
+model PlanTemplate {
+  id         Int     @id @default(autoincrement())
+  name       String  @db.VarChar(80)
+  total_time Int //  总时间（天）
+  remark     String? @db.VarChar(20)
+  total_use  Int     @default(0)
+
+  created_at                       DateTime                           @default(now())
+  updated_at                       DateTime                           @default(now()) @updatedAt
+  PlanTemplateAndTaskGroupRelation PlanTemplateAndTaskGroupRelation[]
+
+  @@map("plan_template")
+}
+
+//  学习计划模版与预设任务集合关系 N:N
+model PlanTemplateAndTaskGroupRelation {
+  plan_template_id Int
+  plan_template    PlanTemplate @relation(fields: [plan_template_id], references: [id])
+
+  platform_task_group_id Int
+  platform_task_group    PlatformTaskGroup @relation(fields: [platform_task_group_id], references: [id])
+
+  @@unique([plan_template_id, platform_task_group_id])
+  @@map("plan_template_and_task_group_relation")
+}
+
 //  学习计划
 model UserPlan {
   id      Int        @id @default(autoincrement())
@@ -147,8 +174,9 @@ model PlatformTaskGroup {
   name         String         @db.VarChar(80) //  任务集名称
   PlatformTask PlatformTask[]
 
-  created_at DateTime @default(now())
-  updated_at DateTime @default(now()) @updatedAt
+  created_at                       DateTime                           @default(now())
+  updated_at                       DateTime                           @default(now()) @updatedAt
+  PlanTemplateAndTaskGroupRelation PlanTemplateAndTaskGroupRelation[]
 
   @@map("platform_task_group")
 }
@@ -242,7 +270,7 @@ enum TaskStatus {
   PROGRESS // 进行中
   PAUSE //  暂停
   COMPLETE //  完成
-  SKIP  //  跳过
+  SKIP //  跳过
 
   @@map("task_status")
 }
