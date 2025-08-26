@@ -172,21 +172,31 @@ model PresetsTaskTag {
 model PlatformTaskGroup {
   id           Int            @id @default(autoincrement())
   name         String         @db.VarChar(80) //  任务集名称
-  PlatformTask PlatformTask[]
 
   created_at                       DateTime                           @default(now())
   updated_at                       DateTime                           @default(now()) @updatedAt
-  PlanTemplateAndTaskGroupRelation PlanTemplateAndTaskGroupRelation[]
+  PlanTemplateAndTaskGroupRelation PlanTemplateAndTaskGroupRelation[] //  任务集与【计划】的关系
+  PlatformTaskGroupAndTaskRelation PlatformTaskGroupAndTaskRelation[] //  任务集与【任务】的关系
 
   @@map("platform_task_group")
+}
+
+//  平台任务集与预设任务关系 N:N
+model PlatformTaskGroupAndTaskRelation {
+  platform_task_group_id Int
+  platform_task_group    PlatformTaskGroup @relation(fields: [platform_task_group_id], references: [id])
+
+  platform_task_id       Int
+  platform_task          PlatformTask @relation(fields: [platform_task_id], references: [id])
+
+  @@unique([platform_task_group_id, platform_task_id])
+  @@map("platform_task_group_and_task_relation")
 }
 
 //  平台预设单个任务
 model PlatformTask {
   id                   Int               @id @default(autoincrement())
   name                 String            @db.VarChar(80) //  任务名称
-  task_group_id        Int
-  group                PlatformTaskGroup @relation(fields: [task_group_id], references: [id])
   priority             Int // 优先级
   background           String?           @db.VarChar(10) //  背景色
   suggested_time_start String?           @db.VarChar(20) //  建议时段开始
@@ -202,6 +212,7 @@ model PlatformTask {
   updated_at DateTime @default(now()) @updatedAt
 
   @@map("platform_task")
+  PlatformTaskGroupAndTaskRelation PlatformTaskGroupAndTaskRelation[]
 }
 
 enum TaskAnnexType {
