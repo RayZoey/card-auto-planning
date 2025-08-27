@@ -1,7 +1,7 @@
 
 import {Expose, Type} from 'class-transformer';
 
-export class PlatfromPlanTemplateQuery {
+export class PlatformPlanTemplateQuery {
   @Expose({name: 'id'})
   @Type(() => Number)
   id: number;

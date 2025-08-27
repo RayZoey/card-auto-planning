@@ -1,8 +1,8 @@
 /*
  * @Author: Ray lighthouseinmind@yeah.net
  * @Date: 2025-07-08 14:59:59
- * @LastEditors: Ray lighthouseinmind@yeah.net
- * @LastEditTime: 2025-08-22 15:51:21
+ * @LastEditors: Reflection lighthouseinmind@yeah.net
+ * @LastEditTime: 2025-08-27 22:21:41
  * @FilePath: /card-auto-planning/src/plan/platform/plan-template/plan-template.controller.ts
  * @Description: 这是默认设置,请设置`customMade`, 打开koroFileHeader查看配置 进行设置: https://github.com/OBKoro1/koro1FileHeader/wiki/%E9%85%8D%E7%BD%AE
  */
@@ -13,11 +13,11 @@ import {PaginationDto} from '@src/common/pagination.dto';
 import {CollectionResource} from '@src/common/collection-resource';
 import {Response} from 'express';
 import { RoleGuard } from '@src/auth/role.guard';
-import { PlatfromTaskGroupService } from './task-group.service';
+import { PlatformTaskGroupService } from './task-group.service';
 
 @Controller('platform-task-group')
-export class PlatfromTaskGroupController {
-  constructor(private readonly service: PlatfromTaskGroupService, private offsetCalculator: OffsetCalculator) {}
+export class PlatformTaskGroupController {
+  constructor(private readonly service: PlatformTaskGroupService, private offsetCalculator: OffsetCalculator) {}
 
   @Get()
   @UseGuards(JwtAuthGuard, RoleGuard('backUser'))
@@ -33,6 +33,13 @@ export class PlatfromTaskGroupController {
       total,
     });
     return resource;
+  }
+
+  //  管理任务与任务集
+  @Post('connect-task/:id')
+  @UseGuards(JwtAuthGuard, RoleGuard('backUser'))
+  async connectTask(@Param('id') id: number, @Body('task_ids') taskIds: []) {
+    await this.service.connectTask(id, taskIds);
   }
 
   @Post()

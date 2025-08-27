@@ -1,6 +1,6 @@
 import {Expose, Type} from 'class-transformer';
 
-export class PlatfromPlanTemplateCreateDto {
+export class PlatformPlanTemplateCreateDto {
 
   @Expose({name: 'name'})
   @Type(() => String)

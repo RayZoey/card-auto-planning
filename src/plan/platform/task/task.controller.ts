@@ -14,7 +14,7 @@ import {CollectionResource} from '@src/common/collection-resource';
 import {Response} from 'express';
 import { RoleGuard } from '@src/auth/role.guard';
 import { PlatformTaskService } from './task.service';
-import { PlatfromTaskUpdateDto } from './task.update.dto';
+import { PlatformTaskUpdateDto } from './task.update.dto';
 import { PlatformTaskCreateDto } from './task.create.dto';
 
 @Controller('platform-task')
@@ -50,7 +50,7 @@ export class PlatformTaskController {
 
   @Put(':id')
   @UseGuards(JwtAuthGuard, RoleGuard('backUser'))
-  async update(@Param('id') id: number, @Body() dto: PlatfromTaskUpdateDto, @Res() response: Response) {
+  async update(@Param('id') id: number, @Body() dto: PlatformTaskUpdateDto, @Res() response: Response) {
     const res = await this.service.update(id, dto);
     response.status(HttpStatus.OK).send({
       code: HttpStatus.OK,

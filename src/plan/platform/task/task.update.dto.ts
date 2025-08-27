@@ -9,7 +9,7 @@
 import { TaskAnnexType, TaskTimingType } from '@prisma/client';
 import {Expose, Type} from 'class-transformer';
 
-export class PlatfromTaskUpdateDto {
+export class PlatformTaskUpdateDto {
 
   @Expose({name: 'name'})
   @Type(() => String)

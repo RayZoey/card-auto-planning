@@ -2,7 +2,7 @@
  * @Author: Ray lighthouseinmind@yeah.net
  * @Date: 2025-07-08 14:59:59
  * @LastEditors: Reflection lighthouseinmind@yeah.net
- * @LastEditTime: 2025-08-27 22:21:30
+ * @LastEditTime: 2025-08-28 00:18:21
  * @FilePath: /card-auto-planning/src/plan/platform/plan-template/plan-template.controller.ts
  * @Description: 这是默认设置,请设置`customMade`, 打开koroFileHeader查看配置 进行设置: https://github.com/OBKoro1/koro1FileHeader/wiki/%E9%85%8D%E7%BD%AE
  */
@@ -13,24 +13,39 @@ import {PaginationDto} from '@src/common/pagination.dto';
 import {CollectionResource} from '@src/common/collection-resource';
 import {Response} from 'express';
 import { RoleGuard } from '@src/auth/role.guard';
-import { PlatformPlanTemplateService } from './plan-template.service';
-import { PlatformPlanTemplateQuery } from './plan-template.query';
-import { PlatformPlanTemplateQueryCondition } from './plan-template.query-condition';
-import { PlatformPlanTemplateCreateDto } from './plan-template.create.dto';
-import { PlatformPlanTemplateUpdateDto } from './plan-template.update.dto';
+import { UserPlanService } from './plan.service';
+import { UserPlanQuery } from './plan.query';
+import { UserPlanQueryCondition } from './plan.query-condition';
+import { UserPlanCreateDto } from './plan.create.dto';
+import { UserPlanUpdateDto } from './plan.update.dto';
 
-@Controller('platform-plan-template')
-export class PlatformPlanTemplateController {
-  constructor(private readonly service: PlatformPlanTemplateService, private offsetCalculator: OffsetCalculator) {}
+@Controller('user-plan')
+export class UserPlanController {
+  constructor(private readonly service: UserPlanService, private offsetCalculator: OffsetCalculator) {}
+
+  @Get(':id')
+  @UseGuards(JwtAuthGuard, RoleGuard('miniUser'))
+  async findById(@Req() req, @Res() response: Response, @Param('id') id: number) {
+    const res = await this.service.findById(id);
+    response.status(HttpStatus.CREATED).send({
+      code: HttpStatus.CREATED,
+      data: res,
+      res: '成功',
+    });
+  }
 
   @Get()
-  @UseGuards(JwtAuthGuard, RoleGuard('backUser'))
-  async list(@Req() request: Request, @Query() pagination: PaginationDto, @Query() queryDto: PlatformPlanTemplateQuery) {
+  @UseGuards(JwtAuthGuard, RoleGuard('miniUser'))
+  async list(@Req() req, @Query() pagination: PaginationDto, @Query() queryDto: UserPlanQuery) {
     const offset = this.offsetCalculator.calculate(pagination.page, pagination.pageSize);
     const limit = pagination.pageSize;
-    const queryCondition = new PlatformPlanTemplateQueryCondition();
+    const queryCondition = new UserPlanQueryCondition();
     queryCondition.id = queryDto.id;
     queryCondition.name = queryDto.name;
+    queryCondition.status = queryDto.status;
+
+    queryCondition.userId = req.user.accountId; //  过滤当前用户
+
     const data = await this.service.findAll(queryCondition, offset, limit);
     const total = await this.service.findTotal(queryCondition);
     const resource = new CollectionResource(data);
@@ -41,12 +56,13 @@ export class PlatformPlanTemplateController {
     });
     return resource;
   }
-  
-  //  关联计划与平台任务集
-  @Post('/connect-task-group/:planId')
-  @UseGuards(JwtAuthGuard, RoleGuard('backUser'))
-  async connectTaskGroup(@Res() response: Response,@Param('planId') planId: number, @Body('group_ids') taskGroupArr: []) {
-    const res = await this.service.connectTaskGroup(planId, taskGroupArr);
+
+  //  使用平台模版生成用户计划
+  @Post('generate-by-template/:templateId')
+  @UseGuards(JwtAuthGuard, RoleGuard('miniUser'))
+  async generateByTemplate(@Req() req, @Res() response: Response, @Param('templateId') templateId: number) {
+    const userId = req.user.accountId;
+    const res = await this.service.generateByTemplate(userId, templateId);
     response.status(HttpStatus.CREATED).send({
       code: HttpStatus.CREATED,
       data: res,
@@ -55,9 +71,10 @@ export class PlatformPlanTemplateController {
   }
   
   @Post()
-  @UseGuards(JwtAuthGuard, RoleGuard('backUser'))
-  async create(@Res() response: Response, @Body() createDto: PlatformPlanTemplateCreateDto) {
-    const res = await this.service.create(createDto);
+  @UseGuards(JwtAuthGuard, RoleGuard('miniUser'))
+  async create(@Req() req, @Res() response: Response, @Body() createDto: UserPlanCreateDto) {
+    const userId = req.user.accountId;
+    const res = await this.service.create(userId, createDto);
     response.status(HttpStatus.CREATED).send({
       code: HttpStatus.CREATED,
       data: res,
@@ -66,9 +83,10 @@ export class PlatformPlanTemplateController {
   }
 
   @Put(':id')
-  @UseGuards(JwtAuthGuard, RoleGuard('backUser'))
-  async update(@Param('id') id: number, @Body() updateDto: PlatformPlanTemplateUpdateDto, @Res() response: Response) {
-    const res = await this.service.update(id, updateDto);
+  @UseGuards(JwtAuthGuard, RoleGuard('miniUser'))
+  async update(@Req() req, @Param('id') id: number, @Body() updateDto: UserPlanUpdateDto, @Res() response: Response) {
+    const userId = req.user.accountId;
+    const res = await this.service.update(id, updateDto, userId);
     response.status(HttpStatus.OK).send({
       code: HttpStatus.OK,
       data: res,
@@ -77,7 +95,7 @@ export class PlatformPlanTemplateController {
   }
 
   @Delete(':id')
-  @UseGuards(JwtAuthGuard, RoleGuard('backUser'))
+  @UseGuards(JwtAuthGuard, RoleGuard('miniUser'))
   async delete(@Param('id') id: number, @Res() response: Response) {
     await this.service.delete(id);
     response.status(HttpStatus.OK).send({

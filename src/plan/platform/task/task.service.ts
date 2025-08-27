@@ -11,7 +11,7 @@ import {PrismaService} from '@src/common/prisma.service';
 import {BaseService} from '@src/base/base.service';
 import {QueryFilter} from '@src/common/query-filter';
 import {QueryConditionParser} from '@src/common/query-condition-parser';
-import { PlatfromTaskUpdateDto } from './task.update.dto';
+import { PlatformTaskUpdateDto } from './task.update.dto';
 import { PlatformTaskCreateDto } from './task.create.dto';
 
 @Injectable()
@@ -44,7 +44,7 @@ export class PlatformTaskService {
     });
   }
 
-  async update(id: number, dto: PlatfromTaskUpdateDto) {
+  async update(id: number, dto: PlatformTaskUpdateDto) {
     const template = await this.prismaService.platformTask.findFirst({
       where: {
         id

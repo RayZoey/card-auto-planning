@@ -109,6 +109,7 @@ model PlanTemplate {
   total_time Int //  总时间（天）
   remark     String? @db.VarChar(20)
   total_use  Int     @default(0)
+  is_enable  Boolean @default(true)
 
   created_at                       DateTime                           @default(now())
   updated_at                       DateTime                           @default(now()) @updatedAt
@@ -127,23 +128,6 @@ model PlanTemplateAndTaskGroupRelation {
 
   @@unique([plan_template_id, platform_task_group_id])
   @@map("plan_template_and_task_group_relation")
-}
-
-//  学习计划
-model UserPlan {
-  id      Int        @id @default(autoincrement())
-  user_id Int
-  user    User       @relation(fields: [user_id], references: [id])
-  status  PlanStatus @default(PROGRESS) //  执行状态
-
-  planned_start_time DateTime //  计划开始时间
-  planned_end_time   DateTime //  计划结束时间
-
-  created_at    DateTime        @default(now())
-  updated_at    DateTime        @default(now()) @updatedAt
-  UserTaskGroup UserTaskGroup[]
-
-  @@map("user_plan")
 }
 
 enum PlanStatus {
@@ -170,8 +154,8 @@ model PresetsTaskTag {
 
 //  平台预设任务集
 model PlatformTaskGroup {
-  id           Int            @id @default(autoincrement())
-  name         String         @db.VarChar(80) //  任务集名称
+  id   Int    @id @default(autoincrement())
+  name String @db.VarChar(80) //  任务集名称
 
   created_at                       DateTime                           @default(now())
   updated_at                       DateTime                           @default(now()) @updatedAt
@@ -186,8 +170,8 @@ model PlatformTaskGroupAndTaskRelation {
   platform_task_group_id Int
   platform_task_group    PlatformTaskGroup @relation(fields: [platform_task_group_id], references: [id])
 
-  platform_task_id       Int
-  platform_task          PlatformTask @relation(fields: [platform_task_id], references: [id])
+  platform_task_id Int
+  platform_task    PlatformTask @relation(fields: [platform_task_id], references: [id])
 
   @@unique([platform_task_group_id, platform_task_id])
   @@map("platform_task_group_and_task_relation")
@@ -195,24 +179,24 @@ model PlatformTaskGroupAndTaskRelation {
 
 //  平台预设单个任务
 model PlatformTask {
-  id                   Int               @id @default(autoincrement())
-  name                 String            @db.VarChar(80) //  任务名称
+  id                   Int            @id @default(autoincrement())
+  name                 String         @db.VarChar(80) //  任务名称
   priority             Int // 优先级
-  background           String?           @db.VarChar(10) //  背景色
-  suggested_time_start String?           @db.VarChar(20) //  建议时段开始
-  suggested_time_end   String?           @db.VarChar(20) //  建议时段结束
-  remark               String?           @db.Text //  备注
+  background           String?        @db.VarChar(10) //  背景色
+  suggested_time_start String?        @db.VarChar(20) //  建议时段开始
+  suggested_time_end   String?        @db.VarChar(20) //  建议时段结束
+  remark               String?        @db.Text //  备注
   annex_type           TaskAnnexType? //  附件类型
-  annex                String?           @db.VarChar(80) //  附件地址
-  timing_type          TaskTimingType    @default(POMODORO) //  计时类型
+  annex                String?        @db.Text //  附件地址
+  timing_type          TaskTimingType @default(POMODORO) //  计时类型
   occupation_time      Int? //  所占耗时(min)
-  can_divisible        Boolean           @default(false) //  是否可分割
+  can_divisible        Boolean        @default(false) //  是否可分割
 
-  created_at DateTime @default(now())
-  updated_at DateTime @default(now()) @updatedAt
+  created_at                       DateTime                           @default(now())
+  updated_at                       DateTime                           @default(now()) @updatedAt
+  PlatformTaskGroupAndTaskRelation PlatformTaskGroupAndTaskRelation[]
 
   @@map("platform_task")
-  PlatformTaskGroupAndTaskRelation PlatformTaskGroupAndTaskRelation[]
 }
 
 enum TaskAnnexType {
@@ -229,6 +213,24 @@ enum TaskTimingType {
   UNTIMING //  不计时
 
   @@map("task_timing_type")
+}
+
+//  学习计划
+model UserPlan {
+  id      Int        @id @default(autoincrement())
+  user_id Int
+  user    User       @relation(fields: [user_id], references: [id])
+  name    String     @db.VarChar(80) //  任务集名称
+  status  PlanStatus @default(PROGRESS) //  执行状态
+
+  planned_start_time DateTime //  计划开始时间
+  planned_end_time   DateTime //  计划结束时间
+
+  created_at    DateTime        @default(now())
+  updated_at    DateTime        @default(now()) @updatedAt
+  UserTaskGroup UserTaskGroup[]
+
+  @@map("user_plan")
 }
 
 //  用户任务集
@@ -252,7 +254,7 @@ model UserTask {
   id                   Int            @id @default(autoincrement())
   name                 String         @db.VarChar(80) //  任务名称
   task_group_id        Int?
-  group                UserTaskGroup?  @relation(fields: [task_group_id], references: [id])
+  group                UserTaskGroup? @relation(fields: [task_group_id], references: [id])
   user_id              Int
   user                 User           @relation(fields: [user_id], references: [id])
   priority             Int // 优先级
@@ -261,7 +263,7 @@ model UserTask {
   suggested_time_end   String?        @db.VarChar(20) //  建议时段结束
   remark               String?        @db.Text //  备注
   annex_type           TaskAnnexType? //  附件类型
-  annex                String?        @db.VarChar(80) //  附件地址
+  annex                String?        @db.Text //  附件地址
   timing_type          TaskTimingType @default(POMODORO) //  计时类型
   occupation_time      Int? //  所占耗时(min)
   actual_time          Int? // 实际耗时(min)

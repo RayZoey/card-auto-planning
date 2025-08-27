@@ -11,19 +11,19 @@ import {PrismaService} from '@src/common/prisma.service';
 import {BaseService} from '@src/base/base.service';
 import {QueryFilter} from '@src/common/query-filter';
 import {QueryConditionParser} from '@src/common/query-condition-parser';
-import { PlatfromPlanTemplateQueryCondition } from './plan-template.query-condition';
-import { PlatfromPlanTemplateCreateDto } from './plan-template.create.dto';
-import { PlatfromPlanTemplateUpdateDto } from './plan-template.update.dto';
+import { PlatformPlanTemplateQueryCondition } from './plan-template.query-condition';
+import { PlatformPlanTemplateCreateDto } from './plan-template.create.dto';
+import { PlatformPlanTemplateUpdateDto } from './plan-template.update.dto';
 
 @Injectable()
-export class PlatfromPlanTemplateService {
+export class PlatformPlanTemplateService {
   constructor(
     private readonly prismaService: PrismaService,
     private readonly baseService: BaseService,
     private readonly queryConditionParser: QueryConditionParser
   ) {}
 
-  async findAll(queryCondition: PlatfromPlanTemplateQueryCondition, offset: number, limit: number) {
+  async findAll(queryCondition: PlatformPlanTemplateQueryCondition, offset: number, limit: number) {
     const filter: QueryFilter = this.queryConditionParser.parse(queryCondition);
     return this.prismaService.planTemplate.findMany({
       orderBy: {
@@ -46,7 +46,7 @@ export class PlatfromPlanTemplateService {
     });
   }
 
-  async findTotal(queryCondition: PlatfromPlanTemplateQueryCondition): Promise<number> {
+  async findTotal(queryCondition: PlatformPlanTemplateQueryCondition): Promise<number> {
     const filter: QueryFilter = this.queryConditionParser.parse(queryCondition);
     return this.prismaService.planTemplate.count(
         {
@@ -55,7 +55,7 @@ export class PlatfromPlanTemplateService {
     );
   }
 
-  async create(dto: PlatfromPlanTemplateCreateDto) {
+  async create(dto: PlatformPlanTemplateCreateDto) {
     return this.prismaService.planTemplate.create({
       data: {
         name: dto.name,
@@ -66,7 +66,7 @@ export class PlatfromPlanTemplateService {
     });
   }
 
-  async update(id: number, dto: PlatfromPlanTemplateUpdateDto) {
+  async update(id: number, dto: PlatformPlanTemplateUpdateDto) {
     const template = await this.prismaService.planTemplate.findFirst({
       where: {
         id
