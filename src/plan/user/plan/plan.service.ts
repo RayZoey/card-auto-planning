@@ -2,7 +2,7 @@
  * @Author: Ray lighthouseinmind@yeah.net
  * @Date: 2025-07-08 14:59:59
  * @LastEditors: Reflection lighthouseinmind@yeah.net
- * @LastEditTime: 2025-08-28 00:20:11
+ * @LastEditTime: 2025-08-29 00:28:07
  * @FilePath: /card-backend/src/card/pdf-print-info/pdf-print-info.service.ts
  * @Description: 这是默认设置,请设置`customMade`, 打开koroFileHeader查看配置 进行设置: https://github.com/OBKoro1/koro1FileHeader/wiki/%E9%85%8D%E7%BD%AE
  */
@@ -36,13 +36,13 @@ export class UserPlanService {
       take: limit,
     });
     // 转成纯对象再转日期为字符串
-const result = a.map(p => ({
-  ...p,
-  planned_start_time: p.planned_start_time.toISOString(),
-  planned_end_time:   p.planned_end_time.toISOString(),
-  created_at:         p.created_at.toISOString(),
-  updated_at:         p.updated_at.toISOString(),
-}));
+    const result = a.map(p => ({
+      ...p,
+      planned_start_time: p.planned_start_time.toISOString(),
+      planned_end_time:   p.planned_end_time.toISOString(),
+      created_at:         p.created_at.toISOString(),
+      updated_at:         p.updated_at.toISOString(),
+    }));
     return result;
   }
 
@@ -110,8 +110,8 @@ const result = a.map(p => ({
       data: {
         user_id: userId,
         name: templateJson.name,
-        planned_start_time: moment().utcOffset(0).format(),
-        planned_end_time: moment().utcOffset(0).add(templateJson.total_time, 'days').format(),
+        planned_start_time: new Date(),
+        planned_end_time: new Date(Date.now() + templateJson.total_time * 24 * 60 * 60 * 1000)
       }
     });
 

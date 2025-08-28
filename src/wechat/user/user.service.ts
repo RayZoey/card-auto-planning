@@ -196,18 +196,31 @@ export class UserService {
     return user;
   }
 
-  async getRankByPoint(){
-    return await this.prismaService.user.findMany({
-      select: {
-        id: true,
-        avatar: true,
-        username: true,
-        point: true
+  //  绑定督学导师
+  async bindTeacher(userId: number, teacherId: number, days: number){
+    const teacher = await this.prismaService.teacher.findFirst({
+      where: {
+        id: teacherId,
+        is_enable: true,
       },
-      orderBy: {
-        point: 'desc'
+    });
+    if (!teacher) {
+      throw new Error('督学导师不存在或被禁用');
+    }
+    await this.prismaService.userAndTeacherRelation.deleteMany({
+      where: {
+        user_id: userId,
+        teacher_id: teacherId,
       },
-      take: 10,
+    });
+    return await this.prismaService.userAndTeacherRelation.create({
+      data: {
+        user_id: userId,
+        teacher_id: teacherId,
+        start_time: moment().utcOffset(0).format(),
+        end_time: moment().utcOffset(0).add(days, 'days').format(),
+      },
     });
   }
+
 }

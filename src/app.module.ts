@@ -1,8 +1,8 @@
 /*
  * @Author: Ray lighthouseinmind@yeah.net
  * @Date: 2025-05-06 09:11:01
- * @LastEditors: Ray lighthouseinmind@yeah.net
- * @LastEditTime: 2025-08-18 15:58:57
+ * @LastEditors: Reflection lighthouseinmind@yeah.net
+ * @LastEditTime: 2025-08-28 23:34:31
  * @FilePath: /water/src/app.module.ts
  * @Description: 这是默认设置,请设置`customMade`, 打开koroFileHeader查看配置 进行设置: https://github.com/OBKoro1/koro1FileHeader/wiki/%E9%85%8D%E7%BD%AE
  */
@@ -22,6 +22,7 @@ import * as path from 'path';
 import { TimingSchedulerModule } from './timing-scheduler/timing-scheduler.module';
 import { DeepTimezoneMiddleware } from './common/timezone.middleware';
 import { PlanModule } from './plan/plan.module';
+import { TeacherModule } from './teacher/teacher.module';
 
 @Module({
   imports: [
@@ -31,6 +32,7 @@ import { PlanModule } from './plan/plan.module';
     BaseModule,
     AuthModule,
     WechatModule, //  微信
+    TeacherModule,
     PlanModule,
     TimingSchedulerModule,
     WinstonModule.forRoot({

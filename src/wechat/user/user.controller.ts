@@ -1,8 +1,8 @@
 /*
  * @Author: Ray lighthouseinmind@yeah.net
  * @Date: 2025-04-14 10:51:15
- * @LastEditors: Ray lighthouseinmind@yeah.net
- * @LastEditTime: 2025-08-15 15:19:48
+ * @LastEditors: Reflection lighthouseinmind@yeah.net
+ * @LastEditTime: 2025-08-29 00:34:13
  * @FilePath: /water/src/wechat/user/user.controller.ts
  * @Description: 这是默认设置,请设置`customMade`, 打开koroFileHeader查看配置 进行设置: https://github.com/OBKoro1/koro1FileHeader/wiki/%E9%85%8D%E7%BD%AE
  */
@@ -16,6 +16,7 @@ import {UserUpdateDto} from './user.update.dto';
 import {UserQuery} from './user.query';
 import {UserQueryCondition} from './user.query-condition';
 import {JwtAuthGuard} from '@src/auth/jwt-auth.guard';
+import { RoleGuard } from '@src/auth/role.guard';
 
 @Controller('wechat')
 export class UserController {
@@ -44,17 +45,7 @@ export class UserController {
     });
     return resource;
   }
-
-  @Get('/mini-user/rank-by-point')
-  async getRankByPoint(@Res() response: Response,) {
-    const r = await this.service.getRankByPoint();
-    response.status(HttpStatus.OK).send({
-      code: HttpStatus.OK,
-      data: r,
-      res: '成功',
-    });
-  }
-
+  
   @Put('/mini-user')
   @UseGuards(JwtAuthGuard)
   async update(@Req() req, @Res() response: Response, @Body() updateDto: UserUpdateDto) {
@@ -64,6 +55,20 @@ export class UserController {
       code: HttpStatus.CREATED,
       res: '成功',
     });
+  }
+
+  //  绑定小程序用户督学服务导师
+  @Post('/mini-user/bind-teacher')
+  @UseGuards(JwtAuthGuard, RoleGuard('miniUser'))
+  async bindTeacher(
+    @Req() req, 
+    @Res() response: Response,
+    @Body('teacher_id') teacherId: number,
+    @Body('days') days: number,
+  ) {
+    const userId = req.user.accountId;
+    const res = await this.service.bindTeacher(userId, teacherId, days);
+    response.status(HttpStatus.CREATED).send(res);
   }
 
   @Post('/mini-user/login')

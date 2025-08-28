@@ -88,6 +88,7 @@ model User {
   UserTaskGroup  UserTaskGroup[]
 
   @@map("user")
+  UserAndTeacherRelation UserAndTeacherRelation[]
 }
 
 //  后台全局系统配置
@@ -223,8 +224,8 @@ model UserPlan {
   name    String     @db.VarChar(80) //  任务集名称
   status  PlanStatus @default(PROGRESS) //  执行状态
 
-  planned_start_time DateTime //  计划开始时间
-  planned_end_time   DateTime //  计划结束时间
+  planned_start_time DateTime @db.DateTime(3) //  计划开始时间 
+  planned_end_time   DateTime @db.DateTime(3) //  计划结束时间
 
   created_at    DateTime        @default(now())
   updated_at    DateTime        @default(now()) @updatedAt
@@ -296,9 +297,29 @@ model Teacher {
   desc    String  @db.Text //  个人简介
   contact String  @db.VarChar(80) //  联系方式
   order   Int? //  排序
+  is_enable Boolean @default(true) //  是否启用
 
   created_at DateTime @default(now())
   updated_at DateTime @default(now()) @updatedAt
 
   @@map("teacher")
+  UserAndTeacherRelation UserAndTeacherRelation[]
+}
+
+//  督学服务
+model UserAndTeacherRelation {
+  id      Int     @id @default(autoincrement())
+  user_id Int
+  user    User    @relation(fields: [user_id], references: [id])
+  teacher_id Int
+  teacher Teacher @relation(fields: [teacher_id], references: [id])
+  start_time DateTime @db.DateTime(3) //  结束时间
+  end_time DateTime @db.DateTime(3) //  开始时间
+  is_expired Boolean @default(false) //  是否过期
+
+  created_at DateTime @default(now())
+  updated_at DateTime @default(now()) @updatedAt
+
+  @@unique([user_id, teacher_id])
+  @@map("user_and_teacher_relation")
 }
