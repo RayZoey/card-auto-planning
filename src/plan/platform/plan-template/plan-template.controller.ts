@@ -2,7 +2,7 @@
  * @Author: Ray lighthouseinmind@yeah.net
  * @Date: 2025-07-08 14:59:59
  * @LastEditors: Reflection lighthouseinmind@yeah.net
- * @LastEditTime: 2025-08-27 22:21:30
+ * @LastEditTime: 2025-09-06 16:12:32
  * @FilePath: /card-auto-planning/src/plan/platform/plan-template/plan-template.controller.ts
  * @Description: 这是默认设置,请设置`customMade`, 打开koroFileHeader查看配置 进行设置: https://github.com/OBKoro1/koro1FileHeader/wiki/%E9%85%8D%E7%BD%AE
  */
@@ -45,44 +45,45 @@ export class PlatformPlanTemplateController {
   //  关联计划与平台任务集
   @Post('/connect-task-group/:planId')
   @UseGuards(JwtAuthGuard, RoleGuard('backUser'))
-  async connectTaskGroup(@Res() response: Response,@Param('planId') planId: number, @Body('group_ids') taskGroupArr: []) {
+  async connectTaskGroup(@Param('planId') planId: number, @Body('group_ids') taskGroupArr: []) {
     const res = await this.service.connectTaskGroup(planId, taskGroupArr);
-    response.status(HttpStatus.CREATED).send({
+    return {                                     
       code: HttpStatus.CREATED,
       data: res,
       res: '成功',
-    });
+    }; 
   }
   
   @Post()
   @UseGuards(JwtAuthGuard, RoleGuard('backUser'))
-  async create(@Res() response: Response, @Body() createDto: PlatformPlanTemplateCreateDto) {
+  async create(@Body() createDto: PlatformPlanTemplateCreateDto) {
     const res = await this.service.create(createDto);
-    response.status(HttpStatus.CREATED).send({
+    return {                                     
       code: HttpStatus.CREATED,
       data: res,
       res: '成功',
-    });
+    }; 
   }
 
   @Put(':id')
   @UseGuards(JwtAuthGuard, RoleGuard('backUser'))
-  async update(@Param('id') id: number, @Body() updateDto: PlatformPlanTemplateUpdateDto, @Res() response: Response) {
+  async update(@Param('id') id: number, @Body() updateDto: PlatformPlanTemplateUpdateDto) {
     const res = await this.service.update(id, updateDto);
-    response.status(HttpStatus.OK).send({
+    return {                                     
       code: HttpStatus.OK,
       data: res,
       res: '成功',
-    });
+    }; 
   }
 
   @Delete(':id')
   @UseGuards(JwtAuthGuard, RoleGuard('backUser'))
-  async delete(@Param('id') id: number, @Res() response: Response) {
-    await this.service.delete(id);
-    response.status(HttpStatus.OK).send({
+  async delete(@Param('id') id: number) {
+    const res = await this.service.delete(id);
+    return {                                     
       code: HttpStatus.OK,
+      data: res,
       res: '成功',
-    });
+    }; 
   }
 }
