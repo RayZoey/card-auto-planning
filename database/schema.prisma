@@ -87,8 +87,6 @@ model User {
   UserTask               UserTask[]
   UserTaskGroup          UserTaskGroup[]
   UserAndTeacherRelation UserAndTeacherRelation[]
-  UserStudyConfig        UserStudyConfig?
-  UserDailyTask          UserDailyTask[]
 
   @@map("user")
   UserPlanOperation UserPlanOperation[]
@@ -185,7 +183,6 @@ model PlatformTaskGroupAndTaskRelation {
 model PlatformTask {
   id                   Int            @id @default(autoincrement())
   name                 String         @db.VarChar(80) //  任务名称
-  priority             Int // 优先级
   background           String?        @db.VarChar(10) //  背景色
   suggested_time_start String?        @db.VarChar(20) //  建议时段开始
   suggested_time_end   String?        @db.VarChar(20) //  建议时段结束
@@ -195,6 +192,7 @@ model PlatformTask {
   timing_type          TaskTimingType @default(POMODORO) //  计时类型
   occupation_time      Int? //  所占耗时(min)
   can_divisible        Boolean        @default(false) //  是否可分割
+  sort_order           Int            @default(0) //  在任务集中的排序值，越小越靠前
 
   created_at                       DateTime                           @default(now())
   updated_at                       DateTime                           @default(now()) @updatedAt
@@ -259,6 +257,7 @@ model UserTask {
   name                 String         @db.VarChar(80) //  任务名称
   task_group_id        Int?
   group                UserTaskGroup? @relation(fields: [task_group_id], references: [id])
+  sort_order           Int            @default(0) //  在任务集中的排序值，越小越靠前
   user_id              Int
   user                 User           @relation(fields: [user_id], references: [id])
   priority             Int // 优先级
@@ -277,14 +276,10 @@ model UserTask {
   last_heartbeat_at    DateTime? // 心跳时间 仅 PROGRESS 状态下更新
   status               TaskStatus     @default(WAITING)
   can_divisible        Boolean        @default(false) //  是否可分割
-  planned_date         DateTime?     @db.Date   // 算法排出的「最早执行日期」；为空=未排过
-  seq                  Int           @default(0) // 同一天内执行顺序（段级顺序）
 
   created_at      DateTime          @default(now())
   updated_at      DateTime          @default(now()) @updatedAt
   userTaskLog     userTaskLog[]
-  UserTaskSegment UserTaskSegment[]
-  UserDailyTask   UserDailyTask[]
 
   @@map("user_task")
 }
@@ -367,98 +362,4 @@ enum PlanOperation {
   SKIP_TASK //  跳过任务
   POSTPONE_TASK //  推迟任务
   UPDATE_PLAN   // 点击「更新规划」触发重排
-}
-
-// ==========================================
-// 1. 学习配置表：保存用户自动规划的顶层开关与偏好
-// ==========================================
-model UserStudyConfig {
-  id      Int  @id @default(autoincrement())
-  user_id Int  @unique // 所属用户（一对一）
-  user    User @relation(fields: [user_id], references: [id])
-
-  plan_type        StudyPlanType @default(CUSTOM) // 规划类型：CUSTOM=自定义时间；AVG_HOUR=平均每日时长
-  avg_hour_per_day Float? // 当 plan_type=AVG_HOUR 时，期望的每日学习小时数（可小数）
-  auto_plan_mode   AutoPlanMode  @default(MODE1) // 自动规划算法模式：MODE1~MODE5（任务集/优先度/顺序组合）
-  is_locked        Boolean       @default(false) // 用户是否**手动锁定**本配置，锁定后前端不可修改
-
-  created_at DateTime @default(now()) // 配置创建时间
-  updated_at DateTime @default(now()) @updatedAt // 最后修改时间
-
-  @@map("user_study_config")
-}
-
-// ==========================================
-// 2. 每日任务映射表：算法落地后「某一天要做多少分钟」的明细
-// ==========================================
-model UserDailyTask {
-  id      Int  @id @default(autoincrement())
-  user_id Int // 所属用户
-  user    User @relation(fields: [user_id], references: [id])
-
-  date         DateTime @db.Date // 归属日期（YYYY-MM-DD）
-  user_task_id Int // 原始 UserTask 外键
-  user_task    UserTask @relation(fields: [user_task_id], references: [id])
-
-  planned_minutes Int // **算法分配**的当天学习时长（分钟）
-  done_minutes    Int             @default(0) // 用户**实际完成**时长（分钟），每日反馈回填
-  status          DailyTaskStatus @default(PLANNED) // 本条明细状态：PLANNED=计划；AHEAD=提前学；DELAY=延期学；GIVE_UP=放弃
-  seq Int @default(0) // 同一天内顺序，从 0 开始，依次递增
-
-  created_at DateTime @default(now()) // 落地时间
-  updated_at DateTime @default(now()) @updatedAt // 最后一次更新时间（含 done_minutes 回填）
-
-  // 关系：若任务被分割，一段对多端
-  segments UserTaskSegment[] // 本日对应的**任务段**（允许为空：未分割时）
-
-  @@unique([user_id, date, user_task_id]) // 同一天同一任务唯一
-  @@index([user_id, date]) // 按日期批量查询快
-  @@map("user_daily_task")
-}
-
-// ==========================================
-// 3. 任务分割段表：把长任务切成小段的「段」级明细
-// ==========================================
-model UserTaskSegment {
-  id           Int      @id @default(autoincrement())
-  user_task_id Int // 原始任务 ID
-  user_task    UserTask @relation(fields: [user_task_id], references: [id])
-
-  segment_index Int // 段序号（0,1,2...）用于保持顺序
-  total_minutes Int // 本段时长（分钟）
-
-  daily_task_id Int? // 若已分配到某天，则外键；为空=未分配
-  daily_task    UserDailyTask? @relation(fields: [daily_task_id], references: [id])
-
-  @@unique([user_task_id, segment_index]) // 同一任务下段序号唯一
-  @@map("user_task_segment")
-}
-
-// ==========================================
-// 新增枚举：中文注释已写在字段上，这里再补一次说明
-// ==========================================
-enum StudyPlanType {
-  CUSTOM // 自定义时间类型：按现有任务总时长排布
-  AVG_HOUR // 平均每日时长类型：按用户设定的「每日多少小时」反推天数
-
-  @@map("study_plan_type")
-}
-
-enum AutoPlanMode {
-  MODE1 // 任务集 + 优先度（先任务集前移，再优先度补空）
-  MODE2 // 任务集 + 顺序（先任务集前移，再顺序补空）
-  MODE3 // 不考虑任务集 + 优先度（全局优先度倒推）
-  MODE4 // 不考虑任务集 + 顺序（全局顺序倒推）
-  MODE5 // 全局优先度（跨天一次性重排）
-
-  @@map("auto_plan_mode")
-}
-
-enum DailyTaskStatus {
-  PLANNED // 算法落地后的初始状态
-  AHEAD // 用户「提前学」：把未来任务提前到今天
-  DELAY // 用户「延期学」：把今天任务延后到未来
-  GIVE_UP // 用户「放弃」：不再做这条任务
-
-  @@map("daily_task_status")
 }

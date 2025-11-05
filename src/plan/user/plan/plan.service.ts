@@ -1,8 +1,8 @@
 /*
  * @Author: Ray lighthouseinmind@yeah.net
  * @Date: 2025-07-08 14:59:59
- * @LastEditors: Reflection lighthouseinmind@yeah.net
- * @LastEditTime: 2025-09-06 17:26:57
+ * @LastEditors: Ray lighthouseinmind@yeah.net
+ * @LastEditTime: 2025-11-05 15:50:26
  * @FilePath: /card-backend/src/card/pdf-print-info/pdf-print-info.service.ts
  * @Description: 这是默认设置,请设置`customMade`, 打开koroFileHeader查看配置 进行设置: https://github.com/OBKoro1/koro1FileHeader/wiki/%E9%85%8D%E7%BD%AE
  */
@@ -151,8 +151,6 @@ export class UserPlanService {
       if (tasksToCreate.length) {
         await Promise.all(tasksToCreate);
       }
-        /* === 新增：立即执行自动排程（模式默认 MODE1，可改） === */
-        await this.autoPlanningService.autoPlanAfterInsert(plan.id, null, plan.planned_start_time, AutoPlanMode.MODE1);
     });
     return 'OK';
 
