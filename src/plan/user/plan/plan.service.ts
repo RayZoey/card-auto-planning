@@ -2,7 +2,7 @@
  * @Author: Ray lighthouseinmind@yeah.net
  * @Date: 2025-07-08 14:59:59
  * @LastEditors: Reflection lighthouseinmind@yeah.net
- * @LastEditTime: 2025-09-06 21:31:24
+ * @LastEditTime: 2025-09-06 17:26:57
  * @FilePath: /card-backend/src/card/pdf-print-info/pdf-print-info.service.ts
  * @Description: 这是默认设置,请设置`customMade`, 打开koroFileHeader查看配置 进行设置: https://github.com/OBKoro1/koro1FileHeader/wiki/%E9%85%8D%E7%BD%AE
  */
@@ -131,7 +131,6 @@ export class UserPlanService {
               data: {
                 name: t.name,
                 user_id: userId,
-                plan_id: plan.id,  // 关联刚创建的计划
                 task_group_id: taskGroups[idx].id, // 关联对应任务组
                 priority: t.priority,
                 background: t.background,
@@ -152,13 +151,13 @@ export class UserPlanService {
       if (tasksToCreate.length) {
         await Promise.all(tasksToCreate);
       }
-        /* === 基于模板创建：只复制任务，不触发自动规划 === */
+        /* === 新增：立即执行自动排程（模式默认 MODE1，可改） === */
+        await this.autoPlanningService.autoPlanAfterInsert(plan.id, null, plan.planned_start_time, AutoPlanMode.MODE1);
     });
     return 'OK';
 
   }
 
-  //  用户创建普通计划
   async create(userId: number, dto: UserPlanCreateDto) {
     return this.prismaService.userPlan.create({
       // @ts-ignore
@@ -192,101 +191,5 @@ export class UserPlanService {
   }
 
   async delete(id: number) {
-  }
-
-  /**
-   * 手动触发自动规划 - 用于手动创建的计划
-   */
-  async triggerAutoPlanning(planId: number, userId: number) {
-    const plan = await this.prismaService.userPlan.findFirst({
-      where: { id: planId, user_id: userId }
-    });
-    
-    if (!plan) {
-      throw new Error('计划不存在或无权限');
-    }
-
-    return await this.autoPlanningService.autoPlanAfterInsert(
-      planId, 
-      userId, 
-      plan.planned_start_time.toISOString(), 
-      'MODE1'
-    );
-  }
-
-  /**
-   * 更新规划 - 重新安排未开始的任务
-   */
-  async updatePlan(planId: number, userId: number) {
-    return await this.autoPlanningService.updatePlan(planId, userId);
-  }
-
-  /**
-   * 获取计划的每日任务概览
-   */
-  async getPlanDailyOverview(planId: number, userId: number, startDate?: string, endDate?: string) {
-    const plan = await this.prismaService.userPlan.findFirst({
-      where: { id: planId, user_id: userId }
-    });
-
-    if (!plan) {
-      throw new Error('计划不存在或无权限');
-    }
-
-    const start = startDate ? moment(startDate).startOf('day') : moment().startOf('day');
-    const end = endDate ? moment(endDate).endOf('day') : moment(plan.planned_end_time).endOf('day');
-
-    const dailyTasks = await this.prismaService.userDailyTask.findMany({
-      where: {
-        plan_id: planId,
-        date: {
-          gte: start.toDate(),
-          lte: end.toDate()
-        }
-      },
-      include: {
-        user_task: {
-          select: {
-            id: true,
-            name: true,
-            timing_type: true,
-            status: true,
-            is_manually_adjusted: true
-          }
-        }
-      },
-      orderBy: [
-        { date: 'asc' },
-        { seq: 'asc' }
-      ]
-    });
-
-    // 按日期分组
-    const groupedByDate = dailyTasks.reduce((acc, task) => {
-      const date = moment(task.date).format('YYYY-MM-DD');
-      if (!acc[date]) {
-        acc[date] = {
-          date,
-          tasks: [],
-          totalMinutes: 0,
-          completedMinutes: 0
-        };
-      }
-      acc[date].tasks.push(task);
-      acc[date].totalMinutes += task.planned_minutes;
-      acc[date].completedMinutes += task.done_minutes;
-      return acc;
-    }, {} as Record<string, any>);
-
-    return {
-      plan: {
-        id: plan.id,
-        name: plan.name,
-        status: plan.status,
-        planned_start_time: plan.planned_start_time,
-        planned_end_time: plan.planned_end_time
-      },
-      dailyOverview: Object.values(groupedByDate)
-    };
   }
 }

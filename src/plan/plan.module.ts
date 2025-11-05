@@ -20,17 +20,14 @@ import { PlatformTaskService } from './platform/task/task.service';
 import { UserTaskController } from './user/task/task.controller';
 import { UserTaskService } from './user/task/task.service';
 import { AutoPlanningService } from './user/auto-planning/planing.service';
-import { TaskOperationController } from './user/task/task-operation.controller';
-import { DailyValidationService } from './user/daily-validation/daily-validation.service';
-import { DailyValidationController } from './user/daily-validation/daily-validation.controller';
 const fs = require('fs');
 
 @Module({
   controllers: [PlatformPlanTemplateController, PlatformTaskGroupController, PlatformTaskController,
-    UserPlanController, UserTaskController, TaskOperationController, DailyValidationController
+    UserPlanController, UserTaskController
   ],
   providers: [PlatformPlanTemplateService, PlatformTaskGroupService, PlatformTaskService, BaseService, ConfigService, UserPlanService,
-    UserTaskService, AutoPlanningService, DailyValidationService
+    UserTaskService, AutoPlanningService
   ],
   imports: [
   ],

@@ -89,9 +89,9 @@ model User {
   UserAndTeacherRelation UserAndTeacherRelation[]
   UserStudyConfig        UserStudyConfig?
   UserDailyTask          UserDailyTask[]
-  UserPlanOperation      UserPlanOperation[]
 
   @@map("user")
+  UserPlanOperation UserPlanOperation[]
 }
 
 //  后台全局系统配置
@@ -233,8 +233,6 @@ model UserPlan {
   created_at    DateTime        @default(now())
   updated_at    DateTime        @default(now()) @updatedAt
   UserTaskGroup UserTaskGroup[]
-  UserDailyTask UserDailyTask[]
-  UserTask      UserTask[]
 
   @@map("user_plan")
 }
@@ -259,8 +257,6 @@ model UserTaskGroup {
 model UserTask {
   id                   Int            @id @default(autoincrement())
   name                 String         @db.VarChar(80) //  任务名称
-  plan_id              Int
-  plan                 UserPlan      @relation(fields: [plan_id], references: [id])
   task_group_id        Int?
   group                UserTaskGroup? @relation(fields: [task_group_id], references: [id])
   user_id              Int
@@ -281,10 +277,8 @@ model UserTask {
   last_heartbeat_at    DateTime? // 心跳时间 仅 PROGRESS 状态下更新
   status               TaskStatus     @default(WAITING)
   can_divisible        Boolean        @default(false) //  是否可分割
-  planned_date         DateTime?      @db.Date // 算法排出的「最早执行日期」；为空=未排过
-  seq                  Int            @default(0) // 同一天内执行顺序（段级顺序）
-  is_manually_adjusted Boolean        @default(false) // 是否被手动调整过
-  original_planned_date DateTime?     @db.Date // 原始计划日期（用于恢复）
+  planned_date         DateTime?     @db.Date   // 算法排出的「最早执行日期」；为空=未排过
+  seq                  Int           @default(0) // 同一天内执行顺序（段级顺序）
 
   created_at      DateTime          @default(now())
   updated_at      DateTime          @default(now()) @updatedAt
@@ -354,14 +348,14 @@ model UserAndTeacherRelation {
 
 // 用户每次「插入/切割/跳过/推迟/重排」都记一条，支持撤销与重放
 model UserPlanOperation {
-  id              Int           @id @default(autoincrement())
+  id              Int             @id @default(autoincrement())
   user_id         Int
-  user            User          @relation(fields: [user_id], references: [id])
-  plan_id         Int // 所属学习计划
-  operation       PlanOperation // 操作类型
-  payload         Json? // 操作参数（JSON）
-  before_snapshot Json? // 操作前每日任务快照（可选）
-  created_at      DateTime      @default(now())
+  user            User            @relation(fields: [user_id], references: [id])
+  plan_id         Int             // 所属学习计划
+  operation       PlanOperation   // 操作类型
+  payload         Json?            // 操作参数（JSON）
+  before_snapshot Json?           // 操作前每日任务快照（可选）
+  created_at      DateTime        @default(now())
 
   @@index([user_id, plan_id, created_at])
   @@map("user_plan_operation")
@@ -369,10 +363,10 @@ model UserPlanOperation {
 
 enum PlanOperation {
   INSERT_TASK //  插入任务
-  CUT_TASK //  切割任务
+  CUT_TASK  //  切割任务
   SKIP_TASK //  跳过任务
   POSTPONE_TASK //  推迟任务
-  UPDATE_PLAN // 点击「更新规划」触发重排
+  UPDATE_PLAN   // 点击「更新规划」触发重排
 }
 
 // ==========================================
@@ -387,9 +381,6 @@ model UserStudyConfig {
   avg_hour_per_day Float? // 当 plan_type=AVG_HOUR 时，期望的每日学习小时数（可小数）
   auto_plan_mode   AutoPlanMode  @default(MODE1) // 自动规划算法模式：MODE1~MODE5（任务集/优先度/顺序组合）
   is_locked        Boolean       @default(false) // 用户是否**手动锁定**本配置，锁定后前端不可修改
-  
-  // 新增：每日学习时间限制配置
-  max_daily_minutes Int @default(480) // 每日最大学习时间（分钟），默认8小时
 
   created_at DateTime @default(now()) // 配置创建时间
   updated_at DateTime @default(now()) @updatedAt // 最后修改时间
@@ -409,13 +400,10 @@ model UserDailyTask {
   user_task_id Int // 原始 UserTask 外键
   user_task    UserTask @relation(fields: [user_task_id], references: [id])
 
-  plan_id Int // 所属学习计划
-  plan    UserPlan @relation(fields: [plan_id], references: [id])
-
   planned_minutes Int // **算法分配**的当天学习时长（分钟）
   done_minutes    Int             @default(0) // 用户**实际完成**时长（分钟），每日反馈回填
   status          DailyTaskStatus @default(PLANNED) // 本条明细状态：PLANNED=计划；AHEAD=提前学；DELAY=延期学；GIVE_UP=放弃
-  seq             Int             @default(0) // 同一天内顺序，从 0 开始，依次递增
+  seq Int @default(0) // 同一天内顺序，从 0 开始，依次递增
 
   created_at DateTime @default(now()) // 落地时间
   updated_at DateTime @default(now()) @updatedAt // 最后一次更新时间（含 done_minutes 回填）
@@ -446,6 +434,9 @@ model UserTaskSegment {
   @@map("user_task_segment")
 }
 
+// ==========================================
+// 新增枚举：中文注释已写在字段上，这里再补一次说明
+// ==========================================
 enum StudyPlanType {
   CUSTOM // 自定义时间类型：按现有任务总时长排布
   AVG_HOUR // 平均每日时长类型：按用户设定的「每日多少小时」反推天数
