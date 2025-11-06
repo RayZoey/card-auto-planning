@@ -87,9 +87,9 @@ model User {
   UserTask               UserTask[]
   UserTaskGroup          UserTaskGroup[]
   UserAndTeacherRelation UserAndTeacherRelation[]
+  UserPlanOperation      UserPlanOperation[]
 
   @@map("user")
-  UserPlanOperation UserPlanOperation[]
 }
 
 //  后台全局系统配置
@@ -113,23 +113,31 @@ model PlanTemplate {
   total_use  Int     @default(0)
   is_enable  Boolean @default(true)
 
-  created_at                       DateTime                           @default(now())
-  updated_at                       DateTime                           @default(now()) @updatedAt
-  PlanTemplateAndTaskGroupRelation PlanTemplateAndTaskGroupRelation[]
+  created_at         DateTime             @default(now())
+  updated_at         DateTime             @default(now()) @updatedAt
+  PlanTemplateDetail PlanTemplateDetail[]
 
   @@map("plan_template")
 }
 
-//  学习计划模版与预设任务集合关系 N:N
-model PlanTemplateAndTaskGroupRelation {
-  plan_template_id Int
+//  学习计划模版详情(单个任务集)
+model PlanTemplateDetail {
+  id               Int          @id @default(autoincrement())
+  plan_template_id Int //  模版id
   plan_template    PlanTemplate @relation(fields: [plan_template_id], references: [id])
 
-  platform_task_group_id Int
-  platform_task_group    PlatformTaskGroup @relation(fields: [platform_task_group_id], references: [id])
+  platform_task_id       Int //  任务id
+  platform_task          PlatformTask       @relation(fields: [platform_task_id], references: [id])
+  platform_task_group_id Int? //  任务集id 可选,为空则为单个任务
+  platform_task_group    PlatformTaskGroup? @relation(fields: [platform_task_group_id], references: [id])
 
-  @@unique([plan_template_id, platform_task_group_id])
-  @@map("plan_template_and_task_group_relation")
+  priority      Int     @default(9999) // 单个任务的优先级 9999为最低无优先级
+  global_sort   Int     @default(1) //  全局排序值，越小越靠前
+  group_sort    Int     @default(1) //  任务集中的排序值，越小越靠前
+  can_divisible Boolean @default(false) //  是否可分割
+  date_no       Int     @default(1) //  所属天数序号，从1开始
+
+  @@map("plan_template_detail")
 }
 
 enum PlanStatus {
@@ -161,7 +169,7 @@ model PlatformTaskGroup {
 
   created_at                       DateTime                           @default(now())
   updated_at                       DateTime                           @default(now()) @updatedAt
-  PlanTemplateAndTaskGroupRelation PlanTemplateAndTaskGroupRelation[] //  任务集与【计划】的关系
+  PlanTemplateDetail               PlanTemplateDetail[] //  任务集与【计划】的关系
   PlatformTaskGroupAndTaskRelation PlatformTaskGroupAndTaskRelation[] //  任务集与【任务】的关系
 
   @@map("platform_task_group")
@@ -174,6 +182,10 @@ model PlatformTaskGroupAndTaskRelation {
 
   platform_task_id Int
   platform_task    PlatformTask @relation(fields: [platform_task_id], references: [id])
+
+  priority      Int     @default(9999) // 单个任务的优先级 9999为最低无优先级
+  group_sort    Int     @default(0) //  任务在任务集中的排序值，越小越靠前
+  can_divisible Boolean @default(false) //  是否可分割
 
   @@unique([platform_task_group_id, platform_task_id])
   @@map("platform_task_group_and_task_relation")
@@ -191,12 +203,11 @@ model PlatformTask {
   annex                String?        @db.Text //  附件地址
   timing_type          TaskTimingType @default(POMODORO) //  计时类型
   occupation_time      Int? //  所占耗时(min)
-  can_divisible        Boolean        @default(false) //  是否可分割
-  sort_order           Int            @default(0) //  在任务集中的排序值，越小越靠前
 
   created_at                       DateTime                           @default(now())
   updated_at                       DateTime                           @default(now()) @updatedAt
   PlatformTaskGroupAndTaskRelation PlatformTaskGroupAndTaskRelation[]
+  PlanTemplateDetail               PlanTemplateDetail[]
 
   @@map("platform_task")
 }
@@ -277,9 +288,9 @@ model UserTask {
   status               TaskStatus     @default(WAITING)
   can_divisible        Boolean        @default(false) //  是否可分割
 
-  created_at      DateTime          @default(now())
-  updated_at      DateTime          @default(now()) @updatedAt
-  userTaskLog     userTaskLog[]
+  created_at  DateTime      @default(now())
+  updated_at  DateTime      @default(now()) @updatedAt
+  userTaskLog userTaskLog[]
 
   @@map("user_task")
 }
@@ -343,14 +354,14 @@ model UserAndTeacherRelation {
 
 // 用户每次「插入/切割/跳过/推迟/重排」都记一条，支持撤销与重放
 model UserPlanOperation {
-  id              Int             @id @default(autoincrement())
+  id              Int           @id @default(autoincrement())
   user_id         Int
-  user            User            @relation(fields: [user_id], references: [id])
-  plan_id         Int             // 所属学习计划
-  operation       PlanOperation   // 操作类型
-  payload         Json?            // 操作参数（JSON）
-  before_snapshot Json?           // 操作前每日任务快照（可选）
-  created_at      DateTime        @default(now())
+  user            User          @relation(fields: [user_id], references: [id])
+  plan_id         Int // 所属学习计划
+  operation       PlanOperation // 操作类型
+  payload         Json? // 操作参数（JSON）
+  before_snapshot Json? // 操作前每日任务快照（可选）
+  created_at      DateTime      @default(now())
 
   @@index([user_id, plan_id, created_at])
   @@map("user_plan_operation")
@@ -358,8 +369,8 @@ model UserPlanOperation {
 
 enum PlanOperation {
   INSERT_TASK //  插入任务
-  CUT_TASK  //  切割任务
+  CUT_TASK //  切割任务
   SKIP_TASK //  跳过任务
   POSTPONE_TASK //  推迟任务
-  UPDATE_PLAN   // 点击「更新规划」触发重排
+  UPDATE_PLAN // 点击「更新规划」触发重排
 }
