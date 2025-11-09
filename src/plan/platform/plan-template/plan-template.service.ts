@@ -2,7 +2,7 @@
  * @Author: Ray lighthouseinmind@yeah.net
  * @Date: 2025-07-08 14:59:59
  * @LastEditors: Reflection lighthouseinmind@yeah.net
- * @LastEditTime: 2025-11-09 16:44:18
+ * @LastEditTime: 2025-11-09 21:46:58
  * @FilePath: /card-backend/src/card/pdf-print-info/pdf-print-info.service.ts
  * @Description: 这是默认设置,请设置`customMade`, 打开koroFileHeader查看配置 进行设置: https://github.com/OBKoro1/koro1FileHeader/wiki/%E9%85%8D%E7%BD%AE
  */
@@ -72,10 +72,41 @@ export class PlatformPlanTemplateService {
           name: dto.name,
           total_days: dto.totalDays,
           remark: dto.remark,
-          total_use: 0
+          total_use: 0,
+          limit_hour: {}
         },
       });
       await this.createDetail(prismaService, template.id, dto.detail);
+
+      // 统计每天任务总耗时
+      let taskList = await prismaService.planTemplateDetail.findMany({
+        where: {
+          plan_template_id: template.id
+        },
+        select: {
+          id: true,
+          date_no: true,
+          platform_task: {
+            select: {
+              occupation_time: true,
+            }
+          }
+        }
+      });
+      const taskListGroupByDateNo = _.groupBy(taskList, 'date_no');
+      const limitHour = _.mapValues(taskListGroupByDateNo, arr =>
+        _.sumBy(arr, 'platform_task.occupation_time')
+      );
+      await prismaService.planTemplate.update({
+        where: {
+          id: template.id
+        },
+        data: {
+          limit_hour: limitHour,  //  日时限
+          total_time: _.sum(_.values(limitHour))  //  总时常
+        },
+      });
+      return true;
     });
   }
 

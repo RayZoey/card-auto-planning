@@ -108,6 +108,8 @@ model PlanTemplate {
   id         Int     @id @default(autoincrement())
   name       String  @db.VarChar(80)
   total_days Int //  总时间（天）
+  total_time Int     @default(0) //  总时长所需（min）
+  limit_hour Json //  每日天数时间限制(min)
   remark     String? @db.VarChar(20)
   total_use  Int     @default(0)
   is_enable  Boolean @default(true)
@@ -202,7 +204,7 @@ model PlatformTask {
   annex_type           TaskAnnexType? //  附件类型
   annex                String?        @db.Text //  附件地址
   timing_type          TaskTimingType @default(POMODORO) //  计时类型
-  occupation_time      Int? //  所占耗时(min)
+  occupation_time      Int //  所占耗时(min)
 
   created_at                       DateTime                           @default(now())
   updated_at                       DateTime                           @default(now()) @updatedAt
@@ -236,6 +238,8 @@ model UserPlan {
   name       String     @db.VarChar(80) //  计划名称
   status     PlanStatus @default(PROGRESS) //  执行状态
   total_days Int        @default(0) //  计划总天数
+  total_time Int        @default(0) //  总时长所需（min）
+  limit_hour Json //  每日天数时间限制(min)
 
   planned_start_time DateTime @db.DateTime(3) //  计划开始时间 
 
@@ -293,7 +297,7 @@ model UserTask {
   annex                String?        @db.Text //  附件地址
 
   timing_type       TaskTimingType @default(POMODORO) //  计时类型
-  occupation_time   Int? //  所占耗时(min)
+  occupation_time   Int //  所占耗时(min)
   actual_time       Int? // 实际耗时(min)
   actual_time_start DateTime? // 实际开始时间
   segment_start     DateTime? // 当前进行段开始（计算用，不展示）

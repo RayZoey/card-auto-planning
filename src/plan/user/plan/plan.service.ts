@@ -2,7 +2,7 @@
  * @Author: Ray lighthouseinmind@yeah.net
  * @Date: 2025-07-08 14:59:59
  * @LastEditors: Reflection lighthouseinmind@yeah.net
- * @LastEditTime: 2025-11-09 17:34:36
+ * @LastEditTime: 2025-11-09 21:48:16
  * @FilePath: /card-backend/src/card/pdf-print-info/pdf-print-info.service.ts
  * @Description: 这是默认设置,请设置`customMade`, 打开koroFileHeader查看配置 进行设置: https://github.com/OBKoro1/koro1FileHeader/wiki/%E9%85%8D%E7%BD%AE
  */
@@ -120,20 +120,15 @@ export class UserPlanService {
     return await this.prismaService.$transaction(async (prisma) => {
       // 2. 生成用户计划
       const now = new Date();
-      console.log( {
-        user_id: userId,
-        name: template.name,
-        status: PlanStatus.PROGRESS, // 可按需要自定义默认状态
-        total_days: template.total_days,
-        planned_start_time: now
-      },)
       const userPlan = await prisma.userPlan.create({
         data: {
           user_id: userId,
           name: template.name,
           status: PlanStatus.PROGRESS, // 可按需要自定义默认状态
           total_days: template.total_days,
-          planned_start_time: now
+          planned_start_time: now,
+          limit_hour: template.limit_hour,
+          total_time: template.total_time
         },
       });
 
@@ -166,6 +161,7 @@ export class UserPlanService {
             name: detail.platform_task.name,
             user_id: userId,
             task_group_id: userTaskGroupId,
+            occupation_time: detail.platform_task.occupation_time,
             background: detail.platform_task.background || null,
             suggested_time_start: detail.platform_task.suggested_time_start || null,
             suggested_time_end: detail.platform_task.suggested_time_end || null,
@@ -187,6 +183,7 @@ export class UserPlanService {
           }
         });
       }
+      return true;
       // return { userPlan, userTaskGroups, userTasks };
     });
   }
