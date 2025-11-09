@@ -1,8 +1,8 @@
 /*
  * @Author: Ray lighthouseinmind@yeah.net
  * @Date: 2025-07-08 14:59:59
- * @LastEditors: Ray lighthouseinmind@yeah.net
- * @LastEditTime: 2025-08-22 17:48:17
+ * @LastEditors: Reflection lighthouseinmind@yeah.net
+ * @LastEditTime: 2025-11-09 16:44:18
  * @FilePath: /card-backend/src/card/pdf-print-info/pdf-print-info.service.ts
  * @Description: 这是默认设置,请设置`customMade`, 打开koroFileHeader查看配置 进行设置: https://github.com/OBKoro1/koro1FileHeader/wiki/%E9%85%8D%E7%BD%AE
  */
@@ -14,6 +14,7 @@ import {QueryConditionParser} from '@src/common/query-condition-parser';
 import { PlatformPlanTemplateQueryCondition } from './plan-template.query-condition';
 import { PlatformPlanTemplateCreateDto } from './plan-template.create.dto';
 import { PlatformPlanTemplateUpdateDto } from './plan-template.update.dto';
+const _ = require('lodash');
 
 @Injectable()
 export class PlatformPlanTemplateService {
@@ -28,17 +29,6 @@ export class PlatformPlanTemplateService {
     return this.prismaService.planTemplate.findMany({
       orderBy: {
         id: 'desc',
-      },
-      include: {
-        PlanTemplateAndTaskGroupRelation: {
-          include: {
-            platform_task_group: {
-              select: {
-                name: true
-              }
-            }
-          }
-        }
       },
       where: filter,
       skip: offset,
@@ -55,18 +45,42 @@ export class PlatformPlanTemplateService {
     );
   }
 
-  async create(dto: PlatformPlanTemplateCreateDto) {
-    return this.prismaService.planTemplate.create({
-      data: {
-        name: dto.name,
-        total_time: dto.totalTime,
-        remark: dto.remark,
-        total_use: 0
+  async findById(id){
+    return this.prismaService.planTemplate.findFirst({
+      where: {
+        id: id
+      },
+      include: {
+        PlanTemplateDetail: true
       }
     });
   }
 
-  async update(id: number, dto: PlatformPlanTemplateUpdateDto) {
+  //  创建任务模版
+  async create(dto: PlatformPlanTemplateCreateDto) {
+    const record = await this.prismaService.planTemplate.findFirst({
+      where: {
+        name: dto.name
+      }
+    });
+    if (record){
+      throw new Error('该计划模版名称已存在');
+    }
+    return await this.prismaService.$transaction(async (prismaService) => {
+      const template = await prismaService.planTemplate.create({
+        data: {
+          name: dto.name,
+          total_days: dto.totalDays,
+          remark: dto.remark,
+          total_use: 0
+        },
+      });
+      await this.createDetail(prismaService, template.id, dto.detail);
+    });
+  }
+
+  //  更新任务模版基础信息
+  async updateBaseInfo(id: number, dto: PlatformPlanTemplateUpdateDto) {
     const template = await this.prismaService.planTemplate.findFirst({
       where: {
         id
@@ -83,32 +97,39 @@ export class PlatformPlanTemplateService {
     });
   }
 
+  //  更新任务模版日历信息
+  async updateDateDetailInfo(id: number, detail: any[]) {
+    const template = await this.prismaService.planTemplate.findFirst({
+      where: {
+        id
+      }
+    });
+    if (!template){
+      throw new Error('未找到该计划模版信息');
+    }
+    return await this.prismaService.$transaction(async (prismaService) => {
+      await prismaService.planTemplateDetail.deleteMany({
+        where: {
+          id: id
+        }
+      });
+      await this.createDetail(prismaService, id, detail);
+    })
+  }
+
+  async createDetail(transactionPrismaService, templateId, detail){
+    let globalSort = 1;
+    for (const day in detail) {
+      detail[day] = _.sortBy(detail[day], 'day_sort');  //  按照当日顺序排序避免传输后乱序
+      for (const item of detail[day]) {
+        await transactionPrismaService.planTemplateDetail.createMany({
+          data: {...item, global_sort: globalSort++, plan_template_id: templateId},
+        });
+      }
+    }
+  }
+
   async delete(id: number) {
   }
 
-  //  关联平台计划与任务集
-  async connectTaskGroup(planId: number, taskGroupArr: []){
-    const plan = await this.prismaService.planTemplate.findFirst({
-      where: {
-        id: planId
-      }
-    });
-    if (!plan){
-      throw new Error('该计划模版不存在');
-    }
-    //  清空关联关系
-    await this.prismaService.planTemplateAndTaskGroupRelation.deleteMany({
-      where: {
-        plan_template_id: planId
-      }
-    });
-    //  建立关联关系
-    return await this.prismaService.planTemplateAndTaskGroupRelation.createMany({
-      data: taskGroupArr.map(taskId => ({
-        plan_template_id: planId,
-        platform_task_group_id: taskId,
-      })),
-      skipDuplicates: true,
-    });
-  }
 }

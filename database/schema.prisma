@@ -108,7 +108,7 @@ model SystemConfig {
 model PlanTemplate {
   id         Int     @id @default(autoincrement())
   name       String  @db.VarChar(80)
-  total_time Int //  总时间（天）
+  total_days Int //  总时间（天）
   remark     String? @db.VarChar(20)
   total_use  Int     @default(0)
   is_enable  Boolean @default(true)
@@ -134,6 +134,7 @@ model PlanTemplateDetail {
   priority      Int     @default(9999) // 单个任务的优先级 9999为最低无优先级
   global_sort   Int     @default(1) //  全局排序值，越小越靠前
   group_sort    Int     @default(1) //  任务集中的排序值，越小越靠前
+  day_sort     Int     @default(1) //  当天内排序值，越小越靠前
   can_divisible Boolean @default(false) //  是否可分割
   date_no       Int     @default(1) //  所属天数序号，从1开始
 

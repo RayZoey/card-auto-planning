@@ -6,11 +6,15 @@ export class PlatformPlanTemplateCreateDto {
   @Type(() => String)
   name: string;
 
-  @Expose({name: 'total_time'})
+  @Expose({name: 'total_days'})
   @Type(() => Number)
-  totalTime: number;
+  totalDays: number;
 
   @Expose({name: 'remark'})
   @Type(() => String)
   remark: string;
+
+  @Expose({name: 'detail'})
+  @Type(() => Array)
+  detail: any[];
 }

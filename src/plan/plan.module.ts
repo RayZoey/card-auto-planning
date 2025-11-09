@@ -19,7 +19,7 @@ import { PlatformTaskGroupService } from './platform/task-group/task-group.servi
 import { PlatformTaskService } from './platform/task/task.service';
 import { UserTaskController } from './user/task/task.controller';
 import { UserTaskService } from './user/task/task.service';
-import { AutoPlanningService } from './user/auto-planning/planing.service';
+import { AutoPlanningService } from './user/auto-planning/planning.service';
 const fs = require('fs');
 
 @Module({

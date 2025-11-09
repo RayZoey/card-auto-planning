@@ -1,0 +1,5 @@
+-- AlterTable
+ALTER TABLE `plan_template_detail` ADD COLUMN `date_no` INTEGER NOT NULL DEFAULT 1,
+    ADD COLUMN `day_sort` INTEGER NOT NULL DEFAULT 1,
+    MODIFY `global_sort` INTEGER NOT NULL DEFAULT 1,
+    MODIFY `group_sort` INTEGER NOT NULL DEFAULT 1;
