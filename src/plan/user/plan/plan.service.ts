@@ -2,7 +2,7 @@
  * @Author: Ray lighthouseinmind@yeah.net
  * @Date: 2025-07-08 14:59:59
  * @LastEditors: Reflection lighthouseinmind@yeah.net
- * @LastEditTime: 2025-11-09 16:42:25
+ * @LastEditTime: 2025-11-09 17:34:36
  * @FilePath: /card-backend/src/card/pdf-print-info/pdf-print-info.service.ts
  * @Description: 这是默认设置,请设置`customMade`, 打开koroFileHeader查看配置 进行设置: https://github.com/OBKoro1/koro1FileHeader/wiki/%E9%85%8D%E7%BD%AE
  */
@@ -52,19 +52,12 @@ export class UserPlanService {
       where: {
         id: id
       },
-      select: {
-        id: true,
-        user_id: true,
-        name: true,
-        status: true,
-        planned_start_time: true,
-        planned_end_time: true,
-        UserTaskGroup: {
+      include: {
+        UserTask: {
           include: {
-            UserTask: true
+            UserTaskScheduler: true
           }
         }
-      
       }
     });
   }
@@ -107,6 +100,94 @@ export class UserPlanService {
 
   //  通过平台模版生成用户个人计划
   async generateByTemplate(userId, templateId){
+    // 1. 查询平台任务模版及其所有详情
+    const template = await this.prismaService.planTemplate.findFirst({
+      where: { id: templateId },
+      include: {
+        PlanTemplateDetail: {
+          include: {
+            platform_task: true,
+            platform_task_group: true,
+          },
+        },
+      },
+    });
 
+    if (!template) {
+      throw new Error('未找到对应的平台计划模版');
+    }
+    // 使用Prisma事务管理，避免数据不一致
+    return await this.prismaService.$transaction(async (prisma) => {
+      // 2. 生成用户计划
+      const now = new Date();
+      console.log( {
+        user_id: userId,
+        name: template.name,
+        status: PlanStatus.PROGRESS, // 可按需要自定义默认状态
+        total_days: template.total_days,
+        planned_start_time: now
+      },)
+      const userPlan = await prisma.userPlan.create({
+        data: {
+          user_id: userId,
+          name: template.name,
+          status: PlanStatus.PROGRESS, // 可按需要自定义默认状态
+          total_days: template.total_days,
+          planned_start_time: now
+        },
+      });
+
+      const userTaskGroupsMap = new Map<number, any>();
+
+      // 3. 按PlanTemplateDetail批量生成任务集与任务
+      for (const detail of template.PlanTemplateDetail) {
+      
+        let userTaskGroupId: number | null = null;
+
+        // 需要生成任务集
+        if (detail.platform_task_group_id) {
+          // 尚未为此group生成用户任务集
+          if (!userTaskGroupsMap.has(detail.platform_task_group_id)) {
+            const group = await prisma.userTaskGroup.create({
+              data: {
+                name: detail.platform_task_group?.name ?? '',
+                user_id: userId,
+              },
+            });
+            userTaskGroupsMap.set(detail.platform_task_group_id, group.id);
+          }
+          userTaskGroupId = userTaskGroupsMap.get(detail.platform_task_group_id);
+        }
+
+        // 生成用户任务
+        const task = await prisma.userTask.create({
+          data: {
+            plan_id: userPlan.id,
+            name: detail.platform_task.name,
+            user_id: userId,
+            task_group_id: userTaskGroupId,
+            background: detail.platform_task.background || null,
+            suggested_time_start: detail.platform_task.suggested_time_start || null,
+            suggested_time_end: detail.platform_task.suggested_time_end || null,
+            remark: detail.platform_task.remark || null,
+            annex_type: detail.platform_task.annex_type || null,
+          },
+        });
+
+        //  生成用户任务调度数据
+        await prisma.userTaskScheduler.create({
+          data: {
+            task_id: task.id,
+            priority: detail.priority,
+            global_sort: detail.global_sort,
+            group_sort: detail.group_sort,
+            day_sort: detail.day_sort,
+            can_divisible: detail.can_divisible,
+            date_no: detail.date_no
+          }
+        });
+      }
+      // return { userPlan, userTaskGroups, userTasks };
+    });
   }
 }

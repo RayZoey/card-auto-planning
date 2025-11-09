@@ -87,7 +87,6 @@ model User {
   UserTask               UserTask[]
   UserTaskGroup          UserTaskGroup[]
   UserAndTeacherRelation UserAndTeacherRelation[]
-  UserPlanOperation      UserPlanOperation[]
 
   @@map("user")
 }
@@ -134,7 +133,7 @@ model PlanTemplateDetail {
   priority      Int     @default(9999) // 单个任务的优先级 9999为最低无优先级
   global_sort   Int     @default(1) //  全局排序值，越小越靠前
   group_sort    Int     @default(1) //  任务集中的排序值，越小越靠前
-  day_sort     Int     @default(1) //  当天内排序值，越小越靠前
+  day_sort      Int     @default(1) //  当天内排序值，越小越靠前
   can_divisible Boolean @default(false) //  是否可分割
   date_no       Int     @default(1) //  所属天数序号，从1开始
 
@@ -231,18 +230,18 @@ enum TaskTimingType {
 
 //  学习计划
 model UserPlan {
-  id      Int        @id @default(autoincrement())
-  user_id Int
-  user    User       @relation(fields: [user_id], references: [id])
-  name    String     @db.VarChar(80) //  任务集名称
-  status  PlanStatus @default(PROGRESS) //  执行状态
+  id         Int        @id @default(autoincrement())
+  user_id    Int
+  user       User       @relation(fields: [user_id], references: [id])
+  name       String     @db.VarChar(80) //  计划名称
+  status     PlanStatus @default(PROGRESS) //  执行状态
+  total_days Int        @default(0) //  计划总天数
 
   planned_start_time DateTime @db.DateTime(3) //  计划开始时间 
-  planned_end_time   DateTime @db.DateTime(3) //  计划结束时间
 
-  created_at    DateTime        @default(now())
-  updated_at    DateTime        @default(now()) @updatedAt
-  UserTaskGroup UserTaskGroup[]
+  created_at DateTime   @default(now())
+  updated_at DateTime   @default(now()) @updatedAt
+  UserTask   UserTask[]
 
   @@map("user_plan")
 }
@@ -253,8 +252,6 @@ model UserTaskGroup {
   name     String     @db.VarChar(80) //  任务集名称
   user_id  Int
   user     User       @relation(fields: [user_id], references: [id])
-  plan_id  Int
-  plan     UserPlan   @relation(fields: [plan_id], references: [id])
   UserTask UserTask[]
 
   created_at DateTime @default(now())
@@ -263,35 +260,52 @@ model UserTaskGroup {
   @@map("user_task_group")
 }
 
+//  用户任务日期调度
+model UserTaskScheduler {
+  task_id Int      @unique
+  task    UserTask @relation(fields: [task_id], references: [id])
+
+  priority      Int     @default(9999) // 单个任务的优先级 9999为最低无优先级
+  global_sort   Int     @default(1) //  任务集合中的全局排序值，越小越靠前
+  group_sort    Int     @default(1) //  任务集中的排序值，越小越靠前  没有则为零散任务
+  day_sort      Int     @default(1) //  当天内排序值，越小越靠前
+  can_divisible Boolean @default(false) //  是否可分割
+  date_no       Int     @default(1) //  所属天数序号，从1开始
+
+  @@map("user_task_scheduler")
+}
+
 //  用户单个任务
 model UserTask {
   id                   Int            @id @default(autoincrement())
+  plan_id              Int
+  plan                 UserPlan?      @relation(fields: [plan_id], references: [id])
   name                 String         @db.VarChar(80) //  任务名称
-  task_group_id        Int?
+  task_group_id        Int? //  没有则为零散任务
   group                UserTaskGroup? @relation(fields: [task_group_id], references: [id])
-  sort_order           Int            @default(0) //  在任务集中的排序值，越小越靠前
   user_id              Int
   user                 User           @relation(fields: [user_id], references: [id])
-  priority             Int // 优先级
   background           String?        @db.VarChar(10) //  背景色
   suggested_time_start String?        @db.VarChar(20) //  建议时段开始
   suggested_time_end   String?        @db.VarChar(20) //  建议时段结束
   remark               String?        @db.Text //  备注
   annex_type           TaskAnnexType? //  附件类型
   annex                String?        @db.Text //  附件地址
-  timing_type          TaskTimingType @default(POMODORO) //  计时类型
-  occupation_time      Int? //  所占耗时(min)
-  actual_time          Int? // 实际耗时(min)
-  actual_time_start    DateTime? // 实际开始时间
-  segment_start        DateTime? // 当前进行段开始（计算用，不展示）
-  actual_time_end      DateTime? // 实际结束时间
-  last_heartbeat_at    DateTime? // 心跳时间 仅 PROGRESS 状态下更新
-  status               TaskStatus     @default(WAITING)
-  can_divisible        Boolean        @default(false) //  是否可分割
 
-  created_at  DateTime      @default(now())
-  updated_at  DateTime      @default(now()) @updatedAt
-  userTaskLog userTaskLog[]
+  timing_type       TaskTimingType @default(POMODORO) //  计时类型
+  occupation_time   Int? //  所占耗时(min)
+  actual_time       Int? // 实际耗时(min)
+  actual_time_start DateTime? // 实际开始时间
+  segment_start     DateTime? // 当前进行段开始（计算用，不展示）
+  actual_time_end   DateTime? // 实际结束时间
+  last_heartbeat_at DateTime? // 心跳时间 仅 PROGRESS 状态下更新
+  status            TaskStatus     @default(WAITING)
+  can_divisible     Boolean        @default(false) //  是否可分割
+
+  created_at        DateTime            @default(now())
+  updated_at        DateTime            @default(now()) @updatedAt
+  userTaskLog       userTaskLog[]
+  UserTaskScheduler UserTaskScheduler[]
 
   @@map("user_task")
 }
@@ -351,21 +365,6 @@ model UserAndTeacherRelation {
 
   @@unique([user_id, teacher_id])
   @@map("user_and_teacher_relation")
-}
-
-// 用户每次「插入/切割/跳过/推迟/重排」都记一条，支持撤销与重放
-model UserPlanOperation {
-  id              Int           @id @default(autoincrement())
-  user_id         Int
-  user            User          @relation(fields: [user_id], references: [id])
-  plan_id         Int // 所属学习计划
-  operation       PlanOperation // 操作类型
-  payload         Json? // 操作参数（JSON）
-  before_snapshot Json? // 操作前每日任务快照（可选）
-  created_at      DateTime      @default(now())
-
-  @@index([user_id, plan_id, created_at])
-  @@map("user_plan_operation")
 }
 
 enum PlanOperation {
