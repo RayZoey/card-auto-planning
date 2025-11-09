@@ -245,14 +245,18 @@ model UserPlan {
 
   created_at DateTime   @default(now())
   updated_at DateTime   @default(now()) @updatedAt
-  UserTask   UserTask[]
 
   @@map("user_plan")
+  UserTaskScheduler UserTaskScheduler[]
+  UserTaskGroup UserTaskGroup[]
+  UserTask UserTask[]
 }
 
 //  用户任务集
 model UserTaskGroup {
   id       Int        @id @default(autoincrement())
+  plan_id              Int
+  plan                 UserPlan      @relation(fields: [plan_id], references: [id])
   name     String     @db.VarChar(80) //  任务集名称
   user_id  Int
   user     User       @relation(fields: [user_id], references: [id])
@@ -266,6 +270,9 @@ model UserTaskGroup {
 
 //  用户任务日期调度
 model UserTaskScheduler {
+  plan_id              Int
+  plan                 UserPlan      @relation(fields: [plan_id], references: [id])
+
   task_id Int      @unique
   task    UserTask @relation(fields: [task_id], references: [id])
 
@@ -283,7 +290,7 @@ model UserTaskScheduler {
 model UserTask {
   id                   Int            @id @default(autoincrement())
   plan_id              Int
-  plan                 UserPlan?      @relation(fields: [plan_id], references: [id])
+  plan                 UserPlan      @relation(fields: [plan_id], references: [id])
   name                 String         @db.VarChar(80) //  任务名称
   task_group_id        Int? //  没有则为零散任务
   group                UserTaskGroup? @relation(fields: [task_group_id], references: [id])
