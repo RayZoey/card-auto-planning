@@ -2,7 +2,7 @@
  * @Author: Ray lighthouseinmind@yeah.net
  * @Date: 2025-07-08 14:59:59
  * @LastEditors: Reflection lighthouseinmind@yeah.net
- * @LastEditTime: 2025-11-09 22:20:16
+ * @LastEditTime: 2025-11-10 23:39:00
  * @FilePath: /card-backend/src/card/pdf-print-info/pdf-print-info.service.ts
  * @Description: 这是默认设置,请设置`customMade`, 打开koroFileHeader查看配置 进行设置: https://github.com/OBKoro1/koro1FileHeader/wiki/%E9%85%8D%E7%BD%AE
  */
@@ -73,13 +73,65 @@ export class UserTaskService {
   }
 
   //  用户删除单个任务
-  async delete(id: number, needAutoPlan: boolean) {
-    //  需要自动规划
-    if(needAutoPlan){
+  async delete(taskId: number, needAutoPlan: boolean) {
+    //  不需要自动规划，只删除对应任务，移动该计划内该任务后续所有任务的顺序
+    const task = await this.prismaService.userTaskScheduler.findUnique({
+      where: { task_id: taskId },
+      select: { task_id: true, plan_id: true, global_sort: true, group_sort:true, day_sort: true }
+    });
+    if (!task) throw new Error('任务不存在');
+
+    return await this.prismaService.$transaction(async (tx) => {
       
-    }else {
-      //  不需要自动规划，只删除对应任务，移动后续所有任务的
-    }
+      if(needAutoPlan){
+        //  需要自动规划
+        
+      }else {
+
+        //  不需要自动规划，将任务排序按情况挪动
+        await this.moveTaskDecrement(tx, task);
+      }
+      // 删除该任务
+      await tx.userTask.delete({
+        where: { id: task.task_id }
+      });
+    });
+  }
+
+  //  删除任务后向前移动所有位置顺序
+  async moveTaskDecrement(prismaService, task: {task_id: number, plan_id: number, global_sort: number, group_sort:number, day_sort: number}){
+      //  移动任务流位置
+      if (task.group_sort !== null) {
+        await prismaService.userTaskScheduler.updateMany({
+          where: {
+            plan_id: task.plan_id,
+            group_sort: { gt: task.group_sort }
+          },
+          data: {
+            group_sort: { decrement: 1 }  // 获取同一个group中，group_sort大于被删任务的所有任务，顺序向前移动一位
+          }
+        });
+      }
+      //  移动当天顺序位置
+      await prismaService.userTaskScheduler.updateMany({
+        where: {
+          plan_id: task.plan_id,
+          day_sort: { gt: task.day_sort }
+        },
+        data: {
+          day_sort: { decrement: 1 } // 获取同一个day中，day_sort大于被删任务的所有任务，顺序向前移动一位
+        }
+      });
+      //  移动计划全局位置
+      await prismaService.userTaskScheduler.updateMany({
+        where: {
+          plan_id: task.plan_id,
+          global_sort: { gt: task.global_sort }
+        },
+        data: {
+          global_sort: { decrement: 1 } // 获取同一个plan中，global_sort大于被删任务的所有任务，顺序向前移动一位
+        }
+      });
   }
   
   //  用户学习过程-修改单个任务状态

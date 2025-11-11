@@ -134,7 +134,7 @@ model PlanTemplateDetail {
 
   priority      Int     @default(9999) // 单个任务的优先级 9999为最低无优先级
   global_sort   Int     @default(1) //  全局排序值，越小越靠前
-  group_sort    Int     @default(1) //  任务集中的排序值，越小越靠前
+  group_sort    Int?     //  任务集中的排序值，越小越靠前
   day_sort      Int     @default(1) //  当天内排序值，越小越靠前
   can_divisible Boolean @default(false) //  是否可分割
   date_no       Int     @default(1) //  所属天数序号，从1开始
@@ -278,7 +278,7 @@ model UserTaskScheduler {
 
   priority      Int     @default(9999) // 单个任务的优先级 9999为最低无优先级
   global_sort   Int     @default(1) //  任务集合中的全局排序值，越小越靠前
-  group_sort    Int     @default(1) //  任务集中的排序值，越小越靠前  没有则为零散任务
+  group_sort    Int?      //  任务集中的排序值，越小越靠前  没有则为零散任务
   day_sort      Int     @default(1) //  当天内排序值，越小越靠前
   can_divisible Boolean @default(false) //  是否可分割
   date_no       Int     @default(1) //  所属天数序号，从1开始
