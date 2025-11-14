@@ -86,9 +86,9 @@ export class UserTaskController {
 
   @Delete(':id')
   @UseGuards(JwtAuthGuard, RoleGuard('miniUser'))
-  async delete(@Req() req, @Param('id') id: number, @Body('need_auto_plan') needAutoPlan: boolean) {
+  async delete(@Req() req, @Param('id') id: number, @Body('need_auto_plan') needAutoPlan: boolean, @Body('need_auto_fill') needAutoFill: boolean) {
     const userId = req.user.accountId;
-    const res = await this.service.delete(userId, id, needAutoPlan);
+    const res = await this.service.delete(userId, id, needAutoPlan, needAutoFill);
     return {                                     
       code: HttpStatus.OK,
       data: res,

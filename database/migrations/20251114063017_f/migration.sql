@@ -1,0 +1,2 @@
+-- AlterTable
+ALTER TABLE `user_task_scheduler` ADD COLUMN `status` ENUM('WAITING', 'PROGRESS', 'PAUSE', 'COMPLETE', 'SKIP') NOT NULL DEFAULT 'WAITING';

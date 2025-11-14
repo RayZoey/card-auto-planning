@@ -283,6 +283,7 @@ model UserTaskScheduler {
   can_divisible Boolean @default(false) //  是否可分割
   date_no       Int     @default(1) //  所属天数序号，从1开始
 
+  status            TaskStatus     @default(WAITING)
   @@map("user_task_scheduler")
 }
 
