@@ -283,10 +283,6 @@ export class UserTaskService {
   }
 
   private async handleAutoPlanDeletion(prismaService, scheduler, needAutoFill: boolean) {
-    await prismaService.userTaskScheduler.delete({
-      where: { task_id: scheduler.task_id },
-    });
-
     const plan = await prismaService.userPlan.findUnique({
       where: { id: scheduler.plan_id },
     });
@@ -294,219 +290,126 @@ export class UserTaskService {
       throw new Error('计划不存在');
     }
 
-    const dayLimit = needAutoFill ? this.resolvePlanDayLimit(plan.limit_hour, scheduler.date_no) : null;
-    const groupPreference = {
-      id: scheduler.task?.task_group_id ?? null,
-      cursor: scheduler.group_sort ?? null,
-    };
+    await prismaService.userTaskScheduler.delete({
+      where: { task_id: scheduler.task_id },
+    });
+
+    await this.compactDay(prismaService, scheduler.plan_id, scheduler.date_no, scheduler.day_sort);
+
+    if (!needAutoFill) {
+      await this.rebuildPlanOrders(prismaService, scheduler.plan_id);
+      return;
+    }
+
+    const dayLimit = this.resolvePlanDayLimit(plan.limit_hour, scheduler.date_no);
+    if (dayLimit === null) {
+      await this.rebuildPlanOrders(prismaService, scheduler.plan_id);
+      return;
+    }
+
     const dayTasks = await prismaService.userTaskScheduler.findMany({
       where: { plan_id: scheduler.plan_id, date_no: scheduler.date_no },
       include: { task: true },
       orderBy: { day_sort: 'asc' },
     });
     const occupiedMinutes = dayTasks.reduce((sum, item) => sum + (item.task?.occupation_time || 0), 0);
-    const targetMinutes = needAutoFill && dayLimit !== null
-      ? Math.max(dayLimit - occupiedMinutes, 0)
-      : (scheduler.task?.occupation_time || 0);
+    const minutesNeeded = Math.max(dayLimit - occupiedMinutes, 0);
 
-    if (targetMinutes > 0) {
-      const currentDayTaskIds = dayTasks.map(item => item.task_id);
-      const fillResult = await this.fillDayFromFuture(prismaService, {
+    const originalDayTaskIds = dayTasks.map(item => item.task_id);
+    
+    if (minutesNeeded > 0) {
+      await this.fillDayGap(prismaService, {
         planId: scheduler.plan_id,
         targetDayNo: scheduler.date_no,
-        minutesNeeded: targetMinutes,
-        preferGroupId: groupPreference.id,
-        deletedGroupSort: groupPreference.cursor,
-        currentDayTaskIds,
+        minutesNeeded,
+        preferGroupId: scheduler.task?.task_group_id ?? null,
+        deletedGroupSort: scheduler.group_sort,
+        originalDayTaskIds,
       });
-      this.updateGroupPreference(groupPreference, fillResult);
     }
 
-    if (needAutoFill) {
-      await this.rebalanceFollowingDays(
-        prismaService,
-        scheduler.plan_id,
-        scheduler.date_no + 1,
-        plan.limit_hour,
-        groupPreference,
-      );
-    }
-
-    await this.rebuildPlanOrders(prismaService, scheduler.plan_id);
+    await this.rebuildPlanOrders(prismaService, scheduler.plan_id, scheduler.date_no, originalDayTaskIds);
   }
 
-  private updateGroupPreference(
-    preference: { id: number | null; cursor: number | null },
-    fillResult: { lastGroupSortUsed: number | null; groupExhausted: boolean },
-  ) {
-    if (!preference.id) return;
-    if (fillResult.lastGroupSortUsed !== null) {
-      preference.cursor = fillResult.lastGroupSortUsed;
-    }
-    if (fillResult.groupExhausted) {
-      preference.id = null;
-      preference.cursor = null;
-    }
-  }
-
-  private async fillDayFromFuture(prismaService, params: {
+  private async fillDayGap(prismaService, params: {
     planId: number;
     targetDayNo: number;
     minutesNeeded: number;
     preferGroupId: number | null;
     deletedGroupSort: number | null;
-    currentDayTaskIds: number[];
-  }): Promise<{ lastGroupSortUsed: number | null; groupExhausted: boolean }> {
-    const { planId, targetDayNo, preferGroupId, currentDayTaskIds } = params;
+    originalDayTaskIds: number[];
+  }) {
+    const { planId, targetDayNo } = params;
     let remaining = params.minutesNeeded;
-    if (remaining <= 0) {
-      return { lastGroupSortUsed: null, groupExhausted: false };
-    }
+    if (remaining <= 0) return;
 
+    let preferGroupId = params.preferGroupId;
     let groupCursor = params.deletedGroupSort ?? null;
-    const dayTaskCount = await prismaService.userTaskScheduler.count({
+    const excludedTaskIds = new Set<number>();
+
+    let nextDaySort = await prismaService.userTaskScheduler.count({
       where: { plan_id: planId, date_no: targetDayNo },
-    });
-    let insertionOffset = 0;
-    const candidates = [];
-    const used = new Set<number>(currentDayTaskIds);
-    let lastGroupSortUsed: number | null = null;
-    let usedGroupCount = 0;
-    let totalGroupCandidates = 0;
+    }) + 1;
 
-    if (preferGroupId !== null) {
-      const groupWhere: any = {
-        plan_id: planId,
-        task: { task_group_id: preferGroupId },
-        group_sort: groupCursor !== null ? { gt: groupCursor } : { gt: 0 },
-      };
-      const nextGroupTasks = await prismaService.userTaskScheduler.findMany({
-        where: groupWhere,
-        include: { task: true },
-        orderBy: { group_sort: 'asc' },
-      });
-      for (const groupTask of nextGroupTasks) {
-        if (used.has(groupTask.task_id)) continue;
-        candidates.push(groupTask);
-        used.add(groupTask.task_id);
-      }
-      totalGroupCandidates = candidates.length;
-    }
-
-    if (preferGroupId === null || candidates.length === 0) {
-      const prioritizedTasks = await prismaService.userTaskScheduler.findMany({
-        where: {
-          plan_id: planId,
-          date_no: { gte: targetDayNo },
-        },
-        include: { task: true },
-        orderBy: [
-          { date_no: 'asc' },
-          { priority: 'asc' },
-          { task_id: 'asc' },
-          { day_sort: 'asc' },
-        ],
+    while (remaining > 0) {
+      let candidate = await this.findPreferredGroupCandidate(prismaService, {
+        planId,
+        preferGroupId,
+        groupCursor,
+        excludedTaskIds,
       });
 
-      for (const task of prioritizedTasks) {
-        if (used.has(task.task_id)) continue;
-        candidates.push(task);
-        used.add(task.task_id);
+      if (!candidate) {
+        preferGroupId = null;
+        groupCursor = null;
+        candidate = await this.findGlobalCandidate(prismaService, {
+          planId,
+          targetDayNo,
+          excludedTaskIds,
+        });
       }
-    }
 
-    for (const candidate of candidates) {
-      if (remaining <= 0) break;
+      if (!candidate) break;
+
       const duration = candidate.task?.occupation_time || 0;
-      if (duration === 0) continue;
-      insertionOffset += 1;
-
-      const isPreferredGroup = preferGroupId !== null && candidate.task?.task_group_id === preferGroupId;
-      if (isPreferredGroup) {
-        usedGroupCount += 1;
-        if (candidate.group_sort !== null) {
-          lastGroupSortUsed = candidate.group_sort;
-          groupCursor = candidate.group_sort;
-        }
+      if (duration <= 0) {
+        excludedTaskIds.add(candidate.task_id);
+        continue;
       }
 
       if (duration <= remaining) {
-        await prismaService.userTaskScheduler.update({
-          where: { task_id: candidate.task_id },
-          data: {
-            date_no: targetDayNo,
-            day_sort: dayTaskCount + insertionOffset,
-          },
-        });
+        await this.moveSchedulerTask(prismaService, candidate, targetDayNo, nextDaySort);
         remaining -= duration;
+        nextDaySort += 1;
+        if (candidate.task?.task_group_id === preferGroupId && candidate.group_sort !== null) {
+          groupCursor = candidate.group_sort;
+        }
         continue;
       }
 
       const canSplit = candidate.can_divisible || candidate.task?.can_divisible;
       if (!canSplit) {
-        insertionOffset -= 1;
+        excludedTaskIds.add(candidate.task_id);
         continue;
       }
 
-      await this.splitTaskForFill(
+      const newTaskId = await this.splitTaskForFill(
         prismaService,
         candidate,
         remaining,
         targetDayNo,
-        dayTaskCount + insertionOffset,
+        nextDaySort,
       );
+      if (!newTaskId) break;
+
       remaining = 0;
-    }
-
-    const groupExhausted =
-      preferGroupId !== null &&
-      (totalGroupCandidates === 0 || usedGroupCount >= totalGroupCandidates);
-    return { lastGroupSortUsed, groupExhausted };
-  }
-
-  private async rebalanceFollowingDays(
-    prismaService,
-    planId: number,
-    startDayNo: number,
-    limitHour: any,
-    groupPreference: { id: number | null; cursor: number | null },
-  ) {
-    const maxDayRes = await prismaService.userTaskScheduler.aggregate({
-      where: { plan_id: planId },
-      _max: { date_no: true },
-    });
-    const maxDay = maxDayRes?._max?.date_no ?? 0;
-    if (maxDay === 0) return;
-
-    for (let day = Math.max(startDayNo, 1); day <= maxDay; day++) {
-      const dayLimit = this.resolvePlanDayLimit(limitHour, day);
-      if (dayLimit === null) continue;
-
-      const dayTasks = await prismaService.userTaskScheduler.findMany({
-        where: { plan_id: planId, date_no: day },
-        include: { task: true },
-        orderBy: { day_sort: 'asc' },
-      });
-      const occupied = dayTasks.reduce((sum, item) => sum + (item.task?.occupation_time || 0), 0);
-      const minutesNeeded = dayLimit - occupied;
-      if (minutesNeeded <= 0) continue;
-
-      const currentDayTaskIds = dayTasks.map(item => item.task_id);
-      const fillResult = await this.fillDayFromFuture(prismaService, {
-        planId,
-        targetDayNo: day,
-        minutesNeeded,
-        preferGroupId: groupPreference.id,
-        deletedGroupSort: groupPreference.cursor,
-        currentDayTaskIds,
-      });
-      this.updateGroupPreference(groupPreference, fillResult);
+      nextDaySort += 1;
     }
   }
 
-  private async splitTaskForFill(prismaService, candidate, minutesToMove: number, targetDayNo: number, daySort: number) {
+  private async splitTaskForFill(prismaService, candidate, minutesToMove: number, targetDayNo: number, daySort: number): Promise<number | null> {
     const task = candidate.task;
-    if (!task || minutesToMove <= 0) return;
+    if (!task || minutesToMove <= 0) return null;
 
     const total = task.occupation_time;
     const remain = total - minutesToMove;
@@ -515,7 +418,7 @@ export class UserTaskService {
         where: { task_id: candidate.task_id },
         data: { date_no: targetDayNo, day_sort: daySort },
       });
-      return;
+      return candidate.task_id;
     }
 
     const baseName = this.normalizeTaskName(task.name || '');
@@ -562,13 +465,89 @@ export class UserTaskService {
         name: remainName,
       },
     });
+
+    return newTask.id;
   }
 
   private normalizeTaskName(name: string): string {
     return name.replace(/\(\d+\/\d+\)\s*$/, '').trim();
   }
 
-  private async rebuildPlanOrders(prismaService, planId: number) {
+  private async compactDay(prismaService, planId: number, dayNo: number, deletedSort: number) {
+    await prismaService.userTaskScheduler.updateMany({
+      where: {
+        plan_id: planId,
+        date_no: dayNo,
+        day_sort: { gt: deletedSort },
+      },
+      data: {
+        day_sort: { decrement: 1 },
+      },
+    });
+  }
+
+  private async moveSchedulerTask(prismaService, schedulerTask, targetDayNo: number, daySort: number) {
+    await prismaService.userTaskScheduler.updateMany({
+      where: {
+        plan_id: schedulerTask.plan_id,
+        date_no: schedulerTask.date_no,
+        day_sort: { gt: schedulerTask.day_sort },
+      },
+      data: {
+        day_sort: { decrement: 1 },
+      },
+    });
+
+    await prismaService.userTaskScheduler.update({
+      where: { task_id: schedulerTask.task_id },
+      data: {
+        date_no: targetDayNo,
+        day_sort: daySort,
+      },
+    });
+  }
+
+  private async findPreferredGroupCandidate(prismaService, params: {
+    planId: number;
+    preferGroupId: number | null;
+    groupCursor: number | null;
+    excludedTaskIds: Set<number>;
+  }) {
+    if (!params.preferGroupId) return null;
+    return prismaService.userTaskScheduler.findFirst({
+      where: {
+        plan_id: params.planId,
+        task_id: { notIn: Array.from(params.excludedTaskIds) },
+        task: { task_group_id: params.preferGroupId },
+        group_sort: params.groupCursor !== null ? { gt: params.groupCursor } : { gt: 0 },
+      },
+      include: { task: true },
+      orderBy: { group_sort: 'asc' },
+    });
+  }
+
+  private async findGlobalCandidate(prismaService, params: {
+    planId: number;
+    targetDayNo: number;
+    excludedTaskIds: Set<number>;
+  }) {
+    return prismaService.userTaskScheduler.findFirst({
+      where: {
+        plan_id: params.planId,
+        task_id: { notIn: Array.from(params.excludedTaskIds) },
+        date_no: { gt: params.targetDayNo },
+      },
+      include: { task: true },
+      orderBy: [
+        { date_no: 'asc' },
+        { priority: 'asc' },
+        { day_sort: 'asc' },
+        { task_id: 'asc' },
+      ],
+    });
+  }
+
+  private async rebuildPlanOrders(prismaService, planId: number, targetDayNo?: number, originalDayTaskIds?: number[]) {
     const schedulers = await prismaService.userTaskScheduler.findMany({
       where: { plan_id: planId },
       include: { task: { select: { task_group_id: true } } },
@@ -580,34 +559,70 @@ export class UserTaskService {
     });
 
     let globalSort = 1;
-    let currentDate = -1;
-    let daySort = 0;
     const groupCursor = new Map<number, number>();
 
-    for (const scheduler of schedulers) {
-      if (scheduler.date_no !== currentDate) {
-        currentDate = scheduler.date_no;
-        daySort = 0;
-      }
-      daySort += 1;
+    const byDate = schedulers.reduce((acc, s) => {
+      if (!acc[s.date_no]) acc[s.date_no] = [];
+      acc[s.date_no].push(s);
+      return acc;
+    }, {} as Record<number, typeof schedulers>);
 
-      let groupSort = null;
-      const groupId = scheduler.task?.task_group_id ?? null;
-      if (groupId !== null) {
-        const next = (groupCursor.get(groupId) ?? 0) + 1;
-        groupCursor.set(groupId, next);
-        groupSort = next;
-      }
+    for (const dateNo of Object.keys(byDate).sort((a, b) => Number(a) - Number(b))) {
+      const dayTasks = byDate[Number(dateNo)];
+      let daySort = 1;
 
-      await prismaService.userTaskScheduler.update({
-        where: { task_id: scheduler.task_id },
-        data: {
-          day_sort: daySort,
-          global_sort: globalSort,
-          group_sort: groupSort,
-        },
-      });
-      globalSort += 1;
+      if (targetDayNo !== undefined && Number(dateNo) === targetDayNo && originalDayTaskIds) {
+        const originalTasks = dayTasks.filter(t => originalDayTaskIds.includes(t.task_id));
+        const newTasks = dayTasks.filter(t => !originalDayTaskIds.includes(t.task_id));
+
+        originalTasks.sort((a, b) => a.day_sort - b.day_sort);
+        newTasks.sort((a, b) => {
+          if (a.priority !== b.priority) return a.priority - b.priority;
+          return (a.task?.id || a.task_id) - (b.task?.id || b.task_id);
+        });
+
+        for (const scheduler of [...originalTasks, ...newTasks]) {
+          let groupSort = null;
+          const groupId = scheduler.task?.task_group_id ?? null;
+          if (groupId !== null) {
+            const next = (groupCursor.get(groupId) ?? 0) + 1;
+            groupCursor.set(groupId, next);
+            groupSort = next;
+          }
+
+          await prismaService.userTaskScheduler.update({
+            where: { task_id: scheduler.task_id },
+            data: {
+              day_sort: daySort,
+              global_sort: globalSort,
+              group_sort: groupSort,
+            },
+          });
+          daySort += 1;
+          globalSort += 1;
+        }
+      } else {
+        for (const scheduler of dayTasks) {
+          let groupSort = null;
+          const groupId = scheduler.task?.task_group_id ?? null;
+          if (groupId !== null) {
+            const next = (groupCursor.get(groupId) ?? 0) + 1;
+            groupCursor.set(groupId, next);
+            groupSort = next;
+          }
+
+          await prismaService.userTaskScheduler.update({
+            where: { task_id: scheduler.task_id },
+            data: {
+              day_sort: daySort,
+              global_sort: globalSort,
+              group_sort: groupSort,
+            },
+          });
+          daySort += 1;
+          globalSort += 1;
+        }
+      }
     }
   }
 }
