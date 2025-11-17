@@ -290,10 +290,16 @@ export class UserTaskService {
       throw new Error('计划不存在');
     }
 
+    // 保存被删除任务的信息
+    const deletedTaskMinutes = scheduler.task?.occupation_time || 0;
+    const deletedTaskGroupId = scheduler.task?.task_group_id ?? null;
+    const deletedGroupSort = scheduler.group_sort;
+
     await prismaService.userTaskScheduler.delete({
       where: { task_id: scheduler.task_id },
     });
 
+    // 先把今日剩余任务向前提
     await this.compactDay(prismaService, scheduler.plan_id, scheduler.date_no, scheduler.day_sort);
 
     if (!needAutoFill) {
@@ -317,13 +323,13 @@ export class UserTaskService {
 
     const originalDayTaskIds = dayTasks.map(item => item.task_id);
     
-    if (minutesNeeded > 0) {
+    if (minutesNeeded > 0 && deletedTaskMinutes > 0) {
       await this.fillDayGap(prismaService, {
         planId: scheduler.plan_id,
         targetDayNo: scheduler.date_no,
-        minutesNeeded,
-        preferGroupId: scheduler.task?.task_group_id ?? null,
-        deletedGroupSort: scheduler.group_sort,
+        minutesNeeded: deletedTaskMinutes, // 使用被删除任务的时间
+        deletedTaskGroupId,
+        deletedGroupSort,
         originalDayTaskIds,
       });
     }
@@ -335,7 +341,7 @@ export class UserTaskService {
     planId: number;
     targetDayNo: number;
     minutesNeeded: number;
-    preferGroupId: number | null;
+    deletedTaskGroupId: number | null;
     deletedGroupSort: number | null;
     originalDayTaskIds: number[];
   }) {
@@ -343,32 +349,41 @@ export class UserTaskService {
     let remaining = params.minutesNeeded;
     if (remaining <= 0) return;
 
-    let preferGroupId = params.preferGroupId;
-    let groupCursor = params.deletedGroupSort ?? null;
-    const excludedTaskIds = new Set<number>();
+    const plan = await prismaService.userPlan.findUnique({
+      where: { id: planId },
+    });
+    if (!plan) return;
 
+    const excludedTaskIds = new Set<number>();
     let nextDaySort = await prismaService.userTaskScheduler.count({
       where: { plan_id: planId, date_no: targetDayNo },
     }) + 1;
 
     while (remaining > 0) {
-      let candidate = await this.findPreferredGroupCandidate(prismaService, {
-        planId,
-        preferGroupId,
-        groupCursor,
-        excludedTaskIds,
-      });
+      let candidate = null;
 
+      // 如果被删除的任务是任务集任务，则从同一任务集中找下一个任务
+      // 注意：排除目标天的任务，因为这些任务已经在补全过程中被移过来了
+      if (params.deletedTaskGroupId !== null && params.deletedGroupSort !== null) {
+        candidate = await this.findNextTaskInGroup(prismaService, {
+          planId,
+          taskGroupId: params.deletedTaskGroupId,
+          groupSort: params.deletedGroupSort,
+          excludedTaskIds,
+          targetDayNo: targetDayNo, // 排除目标天的任务
+        });
+      }
+
+      // 如果不是任务集任务，或者任务集中找不到，则从次日的任务中选择优先度最高的任务
       if (!candidate) {
-        preferGroupId = null;
-        groupCursor = null;
-        candidate = await this.findGlobalCandidate(prismaService, {
+        candidate = await this.findBestCandidateFromNextDay(prismaService, {
           planId,
           targetDayNo,
           excludedTaskIds,
         });
       }
 
+      // 如果仍然找不到候选任务，说明没有更多任务可以移动，退出循环
       if (!candidate) break;
 
       const duration = candidate.task?.occupation_time || 0;
@@ -377,34 +392,101 @@ export class UserTaskService {
         continue;
       }
 
-      if (duration <= remaining) {
-        await this.moveSchedulerTask(prismaService, candidate, targetDayNo, nextDaySort);
-        remaining -= duration;
-        nextDaySort += 1;
-        if (candidate.task?.task_group_id === preferGroupId && candidate.group_sort !== null) {
-          groupCursor = candidate.group_sort;
+      // 记录被移动任务的原所在天和信息
+      const movedFromDayNo = candidate.date_no;
+      const movedTaskGroupId = candidate.task?.task_group_id ?? null;
+      const movedGroupSort = candidate.group_sort;
+
+      // 如果被删除的任务时间 < 挪过来的任务时间，需要切割
+      if (duration > remaining) {
+        const canSplit = candidate.can_divisible || candidate.task?.can_divisible;
+        if (!canSplit) {
+          excludedTaskIds.add(candidate.task_id);
+          continue;
         }
-        continue;
+
+        const newTaskId = await this.splitTaskForFill(
+          prismaService,
+          candidate,
+          remaining,
+          targetDayNo,
+          nextDaySort,
+        );
+        if (!newTaskId) break;
+
+        remaining = 0;
+        nextDaySort += 1;
+        break;
       }
 
-      const canSplit = candidate.can_divisible || candidate.task?.can_divisible;
-      if (!canSplit) {
-        excludedTaskIds.add(candidate.task_id);
-        continue;
-      }
-
-      const newTaskId = await this.splitTaskForFill(
-        prismaService,
-        candidate,
-        remaining,
-        targetDayNo,
-        nextDaySort,
-      );
-      if (!newTaskId) break;
-
-      remaining = 0;
+      // 如果被删除的任务时间 >= 挪过来的任务时间，直接移动
+      await this.moveSchedulerTask(prismaService, candidate, targetDayNo, nextDaySort);
+      remaining -= duration;
       nextDaySort += 1;
+
+      // 如果被删除的任务是任务集任务，更新group_sort游标
+      if (params.deletedTaskGroupId !== null && candidate.task?.task_group_id === params.deletedTaskGroupId && candidate.group_sort !== null) {
+        params.deletedGroupSort = candidate.group_sort;
+      }
+
+      // 如果任务是从其他天移过来的，需要递归补全原所在天
+      // 关键：每移动一个任务后，立即完成该任务的所有连续操作（包括递归补全），
+      // 这样就不会出现当某个日期被移动了多次以后，第二次开始不再补全的问题
+      if (movedFromDayNo !== targetDayNo && movedFromDayNo > targetDayNo) {
+        // 立即递归补全原所在天，确保完全补全后再继续
+        // 注意：递归补全时，使用被移动任务的信息（如果是任务集任务，则从同一任务集找下一个；否则从次日选择）
+        await this.recursivelyFillDayGap(prismaService, {
+          planId,
+          targetDayNo: movedFromDayNo,
+          minutesNeeded: duration, // 使用被移动任务的时间（但recursivelyFillDayGap会重新计算实际需要的分钟数）
+          deletedTaskGroupId: movedTaskGroupId, // 使用被移动任务的任务集ID
+          deletedGroupSort: movedGroupSort, // 使用被移动任务的group_sort
+          plan,
+        });
+      }
+      
+      // 继续循环，检查是否还需要补全
+      // 注意：remaining可能已经为0，但循环会继续检查是否有新的候选任务
     }
+  }
+
+  // 递归补全某一天，确保完全补全后再返回
+  private async recursivelyFillDayGap(prismaService, params: {
+    planId: number;
+    targetDayNo: number;
+    minutesNeeded: number;
+    deletedTaskGroupId: number | null;
+    deletedGroupSort: number | null;
+    plan: any;
+  }) {
+    const { planId, targetDayNo, minutesNeeded, deletedTaskGroupId, deletedGroupSort, plan } = params;
+    
+    const dayLimit = this.resolvePlanDayLimit(plan.limit_hour, targetDayNo);
+    if (dayLimit === null) return;
+    
+    // 查询当前天的任务
+    const dayTasks = await prismaService.userTaskScheduler.findMany({
+      where: { plan_id: planId, date_no: targetDayNo },
+      include: { task: true },
+      orderBy: { day_sort: 'asc' },
+    });
+    
+    const dayOccupied = dayTasks.reduce((sum, item) => sum + (item.task?.occupation_time || 0), 0);
+    const dayNeeded = Math.max(dayLimit - dayOccupied, 0);
+    
+    if (dayNeeded <= 0) return; // 已经满了，不需要补全
+    
+    const originalDayTaskIds = dayTasks.map(item => item.task_id);
+    
+    // 使用fillDayGap进行补全
+    await this.fillDayGap(prismaService, {
+      planId,
+      targetDayNo,
+      minutesNeeded: dayNeeded, // 使用实际需要的分钟数
+      deletedTaskGroupId,
+      deletedGroupSort,
+      originalDayTaskIds,
+    });
   }
 
   private async splitTaskForFill(prismaService, candidate, minutesToMove: number, targetDayNo: number, daySort: number): Promise<number | null> {
@@ -507,26 +589,36 @@ export class UserTaskService {
     });
   }
 
-  private async findPreferredGroupCandidate(prismaService, params: {
+  // 从同一任务集中找下一个任务（group_sort更大的）
+  // 注意：只查找不在目标天的任务，因为目标天的任务已经在补全过程中被移过来了
+  private async findNextTaskInGroup(prismaService, params: {
     planId: number;
-    preferGroupId: number | null;
-    groupCursor: number | null;
+    taskGroupId: number;
+    groupSort: number;
     excludedTaskIds: Set<number>;
+    targetDayNo?: number; // 添加目标天参数，排除目标天的任务
   }) {
-    if (!params.preferGroupId) return null;
+    const where: any = {
+      plan_id: params.planId,
+      task_id: { notIn: Array.from(params.excludedTaskIds) },
+      task: { task_group_id: params.taskGroupId },
+      group_sort: { gt: params.groupSort },
+    };
+    
+    // 如果指定了目标天，排除目标天的任务（因为这些任务已经在补全过程中被移过来了）
+    if (params.targetDayNo !== undefined) {
+      where.date_no = { not: params.targetDayNo };
+    }
+    
     return prismaService.userTaskScheduler.findFirst({
-      where: {
-        plan_id: params.planId,
-        task_id: { notIn: Array.from(params.excludedTaskIds) },
-        task: { task_group_id: params.preferGroupId },
-        group_sort: params.groupCursor !== null ? { gt: params.groupCursor } : { gt: 0 },
-      },
+      where,
       include: { task: true },
       orderBy: { group_sort: 'asc' },
     });
   }
 
-  private async findGlobalCandidate(prismaService, params: {
+  // 从次日的任务中选择优先度最高的任务（同等优先级下选择id更小的）
+  private async findBestCandidateFromNextDay(prismaService, params: {
     planId: number;
     targetDayNo: number;
     excludedTaskIds: Set<number>;
@@ -541,8 +633,8 @@ export class UserTaskService {
       orderBy: [
         { date_no: 'asc' },
         { priority: 'asc' },
-        { day_sort: 'asc' },
         { task_id: 'asc' },
+        { day_sort: 'asc' },
       ],
     });
   }
