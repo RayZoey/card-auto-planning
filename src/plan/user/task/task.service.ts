@@ -44,14 +44,35 @@ export class UserTaskService {
     return task;
   }
 
-  async create(userId: number, dto: UserTaskCreateDto) {
-    return this.prismaService.userTask.create({
-      // @ts-ignore
-      data: {
-        user_id: userId,
-        name: dto.name,
-        status: dto.status
-      }
+  async create(userId: number, dto: UserTaskCreateDto, needAutoPlan: boolean, needAutoFill: boolean) {
+    await this.prismaService.$transaction(async (tx) => {
+      const task = await tx.userTask.create({
+        data: {
+          user: { connect: { id: userId } },
+          plan: { connect: { id: dto.plan_id } },
+          name: dto.name,
+          status: dto.status,
+          group: dto.task_group_id ? { connect: { id: dto.task_group_id } } : undefined,
+          background: dto.background,
+          suggested_time_start: dto.suggested_time_start,
+          suggested_time_end: dto.suggested_time_end,
+          remark: dto.remark,
+          annex_type: dto.annex_type,
+          annex: dto.annex,
+          timing_type: dto.timing_type,
+          occupation_time: dto.occupation_time,
+        }
+      });
+      await tx.userTaskScheduler.create({
+        data: {
+          plan: { connect: { id: dto.plan_id } },
+          task: { connect: { id: task.id } },
+          priority: dto.UserTaskScheduler.priority,
+          global_sort: dto.UserTaskScheduler.global_sort,
+          group_sort: dto.UserTaskScheduler.group_sort,
+          day_sort: dto.UserTaskScheduler.day_sort,
+        }
+      });
     });
   }
 

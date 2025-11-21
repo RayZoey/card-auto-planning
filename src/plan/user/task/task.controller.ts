@@ -37,9 +37,9 @@ export class UserTaskController {
   
   @Post()
   @UseGuards(JwtAuthGuard, RoleGuard('miniUser'))
-  async create(@Req() req, @Body() createDto: UserTaskCreateDto) {
+  async create(@Req() req, @Body() createDto: UserTaskCreateDto, @Body('need_auto_plan') needAutoPlan: boolean, @Body('need_auto_fill') needAutoFill: boolean) {
     const userId = req.user.accountId;
-    const res = await this.service.create(userId, createDto);
+    const res = await this.service.create(userId, createDto, needAutoPlan, needAutoFill);
     return {                                     
       code: HttpStatus.CREATED,
       data: res,
