@@ -45,6 +45,7 @@ export class UserTaskService {
   }
 
   async create(userId: number, dto: UserTaskCreateDto, needAutoPlan: boolean, needAutoFill: boolean) {
+    
     await this.prismaService.$transaction(async (tx) => {
       const task = await tx.userTask.create({
         data: {
@@ -94,51 +95,8 @@ export class UserTaskService {
         return;
       }
 
-      // 如果需要自动规划并且需要填充时间，检查当日时间限制
-      const plan = await tx.userPlan.findUnique({
-        where: { id: dto.plan_id },
-      });
-      if (!plan) {
-        throw new Error('计划不存在');
-      }
-
-      const dayLimit = this.resolvePlanDayLimit(plan.limit_hour, scheduler.date_no);
-      if (dayLimit === null) {
-        // 没有时间限制，只调整当天其他任务的 day_sort
-        await tx.userTaskScheduler.updateMany({
-          where: {
-            plan_id: dto.plan_id,
-            date_no: scheduler.date_no,
-            day_sort: { gte: scheduler.day_sort },
-            task_id: { not: task.id },
-          },
-          data: {
-            day_sort: { increment: 1 },
-          },
-        });
-        return;
-      }
-
-      // 计算当日已占用时间
-      const dayTasks = await tx.userTaskScheduler.findMany({
-        where: { plan_id: dto.plan_id, date_no: scheduler.date_no },
-        include: { task: true },
-        orderBy: { day_sort: 'asc' },
-      });
-      const occupiedMinutes = dayTasks.reduce((sum, item) => sum + (item.task?.occupation_time || 0), 0);
-      const excessMinutes = occupiedMinutes - dayLimit;
-
-      // 如果超过时间限制，需要推迟任务（排除新插入的任务）
-      if (excessMinutes > 0) {
-        await this.postponeTasksToNextDay(tx, {
-          planId: dto.plan_id,
-          currentDayNo: scheduler.date_no,
-          minutesToPostpone: excessMinutes,
-          excludeTaskId: task.id, // 排除新插入的任务
-        });
-      }
-
-      // 调整当天其他任务的 day_sort
+      // 如果需要自动规划并且需要填充时间，先调整当天其他任务的 day_sort（把今日剩余任务向后推后）
+      // 调整当天其他任务的 day_sort（day_sort >= 新任务 day_sort 的任务需要 +1）
       await tx.userTaskScheduler.updateMany({
         where: {
           plan_id: dto.plan_id,
@@ -149,6 +107,27 @@ export class UserTaskService {
         data: {
           day_sort: { increment: 1 },
         },
+      });
+
+      // 然后检查当日时间限制
+      const plan = await tx.userPlan.findUnique({
+        where: { id: dto.plan_id },
+      });
+      if (!plan) {
+        throw new Error('计划不存在');
+      }
+
+      const dayLimit = this.resolvePlanDayLimit(plan.limit_hour, scheduler.date_no);
+      if (dayLimit === null) {
+        // 没有时间限制，已经调整完 day_sort，直接返回
+        return;
+      }
+
+      // 插入任务后，检查并处理超时（递归处理被影响的天）
+      await this.handleDayOverflow(tx, {
+        planId: dto.plan_id,
+        dayNo: scheduler.date_no,
+        plan: plan,
       });
     });
   }
@@ -737,20 +716,253 @@ export class UserTaskService {
     });
   }
 
-  // 推迟任务到次日，以满足当日时间限制
+  // 处理某一天的超时问题，递归处理被影响的下一天
+  private async handleDayOverflow(prismaService, params: {
+    planId: number;
+    dayNo: number;
+    plan: any;
+  }) {
+    const { planId, dayNo, plan } = params;
+    
+    // 检查当天的时间限制
+    const dayLimit = this.resolvePlanDayLimit(plan.limit_hour, dayNo);
+    
+    // 如果当天是计划的最后一天，不需要处理时间限制
+    const isLastDay = plan.total_days && dayNo >= plan.total_days;
+    if (dayLimit === null || isLastDay) {
+      // 没有时间限制，不需要处理，但需要检查下一天是否受影响
+      const nextDayNo = dayNo + 1;
+      const nextDayLimit = this.resolvePlanDayLimit(plan.limit_hour, nextDayNo);
+      if (nextDayLimit !== null) {
+        const nextDayTasks = await prismaService.userTaskScheduler.findMany({
+          where: { plan_id: planId, date_no: nextDayNo },
+          include: { task: true },
+          orderBy: { day_sort: 'asc' },
+        });
+        const nextDayOccupied = nextDayTasks.reduce((sum, item) => sum + (item.task?.occupation_time || 0), 0);
+        const nextDayExcess = nextDayOccupied - nextDayLimit;
+        if (nextDayExcess > 0) {
+          // 下一天也超时了，递归处理
+          await this.handleDayOverflow(prismaService, {
+            planId,
+            dayNo: nextDayNo,
+            plan,
+          });
+        }
+      }
+      return;
+    }
+
+    // 使用 while 循环处理当天的超时问题
+    while (true) {
+      // 重新读取当天所有任务（因为任务可能已经被移动或拆分）
+      const dayTasks = await prismaService.userTaskScheduler.findMany({
+        where: { plan_id: planId, date_no: dayNo },
+        include: { task: true },
+        orderBy: { day_sort: 'asc' },
+      });
+      
+      // 计算当天已占用时间
+      const occupiedMinutes = dayTasks.reduce((sum, item) => sum + (item.task?.occupation_time || 0), 0);
+      const excessMinutes = occupiedMinutes - dayLimit;
+
+      // 如果不超过时间限制，检查下一天是否受影响
+      if (excessMinutes <= 0) {
+        // 检查下一天是否超时（因为可能有任务被移到了下一天）
+        const nextDayNo = dayNo + 1;
+        const nextDayLimit = this.resolvePlanDayLimit(plan.limit_hour, nextDayNo);
+        if (nextDayLimit !== null) {
+          const nextDayTasks = await prismaService.userTaskScheduler.findMany({
+            where: { plan_id: planId, date_no: nextDayNo },
+            include: { task: true },
+            orderBy: { day_sort: 'asc' },
+          });
+          const nextDayOccupied = nextDayTasks.reduce((sum, item) => sum + (item.task?.occupation_time || 0), 0);
+          const nextDayExcess = nextDayOccupied - nextDayLimit;
+          if (nextDayExcess > 0) {
+            // 下一天也超时了，递归处理
+            await this.handleDayOverflow(prismaService, {
+              planId,
+              dayNo: nextDayNo,
+              plan,
+            });
+          }
+        }
+        return;
+      }
+
+      // 如果超时，需要挪走任务
+      // 先检查下一天是否有时间限制，或者是否是最后一天
+      const nextDayNo = dayNo + 1;
+      const nextDayLimit = this.resolvePlanDayLimit(plan.limit_hour, nextDayNo);
+      const isNextDayLastDay = plan.total_days && nextDayNo >= plan.total_days;
+      
+      // 如果下一天没有时间限制或者是最后一天，把所有超时的任务都移到下一天，不再拆分
+      // 注意：如果是最后一天，即使有时间限制，也应该忽略，把所有任务都放在最后一天
+      if (nextDayLimit === null || isNextDayLastDay) {
+        // 循环移动任务，直到当天不超时
+        while (true) {
+          // 重新读取当天所有任务
+          const currentDayTasks = await prismaService.userTaskScheduler.findMany({
+            where: { plan_id: planId, date_no: dayNo },
+            include: { task: true },
+            orderBy: { day_sort: 'asc' },
+          });
+          
+          const currentOccupied = currentDayTasks.reduce((sum, item) => sum + (item.task?.occupation_time || 0), 0);
+          const currentExcess = currentOccupied - dayLimit;
+          
+          if (currentExcess <= 0) {
+            // 已经不需要挪走更多任务了
+            return;
+          }
+          
+          // 从最低优先级开始逐层查找，相同优先级按 day_sort 倒序（靠后的先被挪走）
+          const priorityOrder = [9999, 3, 2, 1]; // 无优先级(9999)、3级、2级、1级
+          
+          let foundTask = false;
+          for (const priority of priorityOrder) {
+            // 获取当前优先级的所有任务，按 day_sort 倒序排列（靠后的先被挪走）
+            const tasksWithPriority = currentDayTasks
+              .filter(item => item.priority === priority)
+              .sort((a, b) => b.day_sort - a.day_sort); // 倒序，day_sort 大的在前（靠后的先被挪走）
+            
+            for (const schedulerTask of tasksWithPriority) {
+              const taskDuration = schedulerTask.task?.occupation_time || 0;
+              if (taskDuration <= 0) {
+                continue;
+              }
+
+              // 如果需要移走的时间小于任务时间，且任务可以拆分，则拆分任务
+              if (taskDuration > currentExcess) {
+                const canSplit = schedulerTask.can_divisible || schedulerTask.task?.can_divisible;
+                if (canSplit) {
+                  // 拆分任务：将 currentExcess 移到下一天
+                  await this.splitTaskForPostpone(
+                    prismaService,
+                    schedulerTask,
+                    currentExcess,
+                    dayNo,
+                  );
+                  foundTask = true;
+                  break; // 跳出内层循环，重新检查
+                }
+              }
+
+              // 如果任务时间 <= 需要挪走的时间，或者不能拆分，直接移动整个任务到次日最顶端
+              await this.moveTaskToNextDayTop(prismaService, schedulerTask, dayNo);
+              foundTask = true;
+              break; // 跳出内层循环，重新检查
+            }
+            
+            if (foundTask) {
+              break; // 跳出外层循环，重新检查
+            }
+          }
+          
+          if (!foundTask) {
+            // 没有找到可以移动的任务，退出循环
+            return;
+          }
+        }
+      }
+      
+      // 如果下一天有时间限制，按照原来的逻辑处理（可以拆分）
+      // 从最低优先级开始逐层查找，相同优先级按 day_sort 倒序（靠后的先被挪走）
+      const priorityOrder = [9999, 3, 2, 1]; // 无优先级(9999)、3级、2级、1级
+      
+      let foundTask = false;
+      
+      for (const priority of priorityOrder) {
+        // 获取当前优先级的所有任务，按 day_sort 倒序排列
+        const tasksWithPriority = dayTasks
+          .filter(item => item.priority === priority)
+          .sort((a, b) => b.day_sort - a.day_sort); // 倒序，day_sort 大的在前
+        
+        for (const schedulerTask of tasksWithPriority) {
+          const taskDuration = schedulerTask.task?.occupation_time || 0;
+          if (taskDuration <= 0) {
+            continue;
+          }
+
+          // 如果需要挪走的时间小于任务时间，需要拆分任务
+          if (taskDuration > excessMinutes) {
+            const canSplit = schedulerTask.can_divisible || schedulerTask.task?.can_divisible;
+            if (!canSplit) {
+              // 不能拆分，跳过这个任务
+              continue;
+            }
+
+            // 拆分任务：将 excessMinutes 移到下一天
+            await this.splitTaskForPostpone(
+              prismaService,
+              schedulerTask,
+              excessMinutes,
+              dayNo,
+            );
+            foundTask = true;
+            break; // 跳出内层循环，重新检查
+          } else {
+            // 如果任务时间 <= 需要挪走的时间，直接移动整个任务到次日最顶端
+            await this.moveTaskToNextDayTop(prismaService, schedulerTask, dayNo);
+            foundTask = true;
+            break; // 跳出内层循环，重新检查
+          }
+        }
+        
+        if (foundTask) {
+          break; // 跳出外层循环，重新检查
+        }
+      }
+      
+      // 如果没有找到可以挪走的任务，退出循环
+      if (!foundTask) {
+        // 检查下一天是否受影响
+        const nextDayNo = dayNo + 1;
+        const nextDayLimit = this.resolvePlanDayLimit(plan.limit_hour, nextDayNo);
+        if (nextDayLimit !== null) {
+          const nextDayTasks = await prismaService.userTaskScheduler.findMany({
+            where: { plan_id: planId, date_no: nextDayNo },
+            include: { task: true },
+            orderBy: { day_sort: 'asc' },
+          });
+          const nextDayOccupied = nextDayTasks.reduce((sum, item) => sum + (item.task?.occupation_time || 0), 0);
+          const nextDayExcess = nextDayOccupied - nextDayLimit;
+          if (nextDayExcess > 0) {
+            // 下一天也超时了，递归处理
+            await this.handleDayOverflow(prismaService, {
+              planId,
+              dayNo: nextDayNo,
+              plan,
+            });
+          }
+        }
+        return;
+      }
+    }
+  }
+
+  // 推迟任务到次日，以满足当日时间限制（保留旧方法以兼容，但不再使用）
   private async postponeTasksToNextDay(prismaService, params: {
     planId: number;
     currentDayNo: number;
     minutesToPostpone: number;
     excludeTaskId?: number; // 排除的任务ID（通常是新插入的任务）
+    plan?: any; // 计划对象，用于重新计算时间限制
   }) {
-    const { planId, currentDayNo, minutesToPostpone, excludeTaskId } = params;
+    const { planId, currentDayNo, minutesToPostpone, excludeTaskId, plan } = params;
     let remaining = minutesToPostpone;
     if (remaining <= 0) return;
 
     const excludedTaskIds = new Set<number>();
     if (excludeTaskId) {
       excludedTaskIds.add(excludeTaskId);
+    }
+
+    // 如果传入了 plan，需要重新计算时间限制
+    let dayLimit: number | null = null;
+    if (plan) {
+      dayLimit = this.resolvePlanDayLimit(plan.limit_hour, currentDayNo);
     }
 
     while (remaining > 0) {
@@ -763,6 +975,51 @@ export class UserTaskService {
       });
 
       if (!candidate) {
+        // 没有更多任务可以推迟，检查是否可以拆分新插入的任务
+        if (excludeTaskId && remaining > 0) {
+          const newTaskScheduler = await prismaService.userTaskScheduler.findUnique({
+            where: { task_id: excludeTaskId },
+            include: { task: true },
+          });
+          
+          if (newTaskScheduler && 
+              newTaskScheduler.priority === 9999 && // 无优先级
+              newTaskScheduler.date_no === currentDayNo &&
+              (newTaskScheduler.can_divisible || newTaskScheduler.task?.can_divisible) &&
+              newTaskScheduler.task?.occupation_time > remaining) {
+            // 可以拆分新插入的任务
+            await this.splitTaskForPostpone(
+              prismaService,
+              newTaskScheduler,
+              remaining,
+              currentDayNo,
+            );
+            
+            // 拆分后，重新检查当天是否还超时
+            if (plan && dayLimit !== null) {
+              const dayTasks = await prismaService.userTaskScheduler.findMany({
+                where: { plan_id: planId, date_no: currentDayNo },
+                include: { task: true },
+                orderBy: { day_sort: 'asc' },
+              });
+              const occupiedMinutes = dayTasks.reduce((sum, item) => sum + (item.task?.occupation_time || 0), 0);
+              const newExcessMinutes = occupiedMinutes - dayLimit;
+              if (newExcessMinutes > 0) {
+                // 如果还超时，更新 remaining 继续循环
+                remaining = newExcessMinutes;
+                // 从 excludedTaskIds 中移除 excludeTaskId，以便下次循环时能够再次找到它（如果需要继续拆分）
+                excludedTaskIds.delete(excludeTaskId);
+                continue;
+              } else {
+                // 如果不超时了，退出循环
+                remaining = 0;
+              }
+            } else {
+              remaining = 0;
+            }
+            break;
+          }
+        }
         // 没有更多任务可以推迟，退出循环
         break;
       }
@@ -788,13 +1045,35 @@ export class UserTaskService {
           remaining,
           currentDayNo,
         );
-        remaining = 0;
-        break;
+      } else {
+        // 如果任务时间 <= 需要挪走的时间，直接移动整个任务到次日最顶端
+        await this.moveTaskToNextDayTop(prismaService, candidate, currentDayNo);
       }
-
-      // 如果任务时间 <= 需要挪走的时间，直接移动整个任务到次日最顶端
-      await this.moveTaskToNextDayTop(prismaService, candidate, currentDayNo);
-      remaining -= taskDuration;
+      
+      // 移动任务后，重新检查当天是否还超时
+      if (plan && dayLimit !== null) {
+        const dayTasks = await prismaService.userTaskScheduler.findMany({
+          where: { plan_id: planId, date_no: currentDayNo },
+          include: { task: true },
+          orderBy: { day_sort: 'asc' },
+        });
+        const occupiedMinutes = dayTasks.reduce((sum, item) => sum + (item.task?.occupation_time || 0), 0);
+        const newExcessMinutes = occupiedMinutes - dayLimit;
+        if (newExcessMinutes > 0) {
+          // 如果还超时，更新 remaining 继续循环
+          remaining = newExcessMinutes;
+        } else {
+          // 如果不超时了，退出循环
+          remaining = 0;
+        }
+      } else {
+        // 如果没有传入 plan，使用原来的逻辑
+        if (taskDuration > remaining) {
+          remaining = 0;
+        } else {
+          remaining -= taskDuration;
+        }
+      }
     }
   }
 
@@ -844,7 +1123,9 @@ export class UserTaskService {
     }
 
     const baseName = this.normalizeTaskName(task.name || '');
-    const moveName = `${baseName}(${minutesToMove}/${total})`;
+    // 拆分出来的任务（移到下一天的）名称要体现是被拆出来的
+    const moveName = `${baseName}【拆分】(${minutesToMove}/${total})`;
+    // 原任务保留剩余部分
     const remainName = `${baseName}(${remain}/${total})`;
 
     // 创建新任务（需要移到次日的部分）

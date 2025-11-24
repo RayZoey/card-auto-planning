@@ -136,7 +136,7 @@ model PlanTemplateDetail {
   global_sort   Int     @default(1) //  全局排序值，越小越靠前
   group_sort    Int?     //  任务集中的排序值，越小越靠前
   day_sort      Int     @default(1) //  当天内排序值，越小越靠前
-  can_divisible Boolean @default(false) //  是否可分割
+  can_divisible Boolean @default(true) //  是否可分割
   date_no       Int     @default(1) //  所属天数序号，从1开始
 
   @@map("plan_template_detail")
@@ -187,7 +187,7 @@ model PlatformTaskGroupAndTaskRelation {
 
   priority      Int     @default(9999) // 单个任务的优先级 9999为最低无优先级
   group_sort    Int     @default(0) //  任务在任务集中的排序值，越小越靠前
-  can_divisible Boolean @default(false) //  是否可分割
+  can_divisible Boolean @default(true) //  是否可分割
 
   @@unique([platform_task_group_id, platform_task_id])
   @@map("platform_task_group_and_task_relation")
@@ -280,7 +280,7 @@ model UserTaskScheduler {
   global_sort   Int     @default(1) //  任务集合中的全局排序值，越小越靠前
   group_sort    Int?      //  任务集中的排序值，越小越靠前  没有则为零散任务
   day_sort      Int     @default(1) //  当天内排序值，越小越靠前
-  can_divisible Boolean @default(false) //  是否可分割
+  can_divisible Boolean @default(true) //  是否可分割
   date_no       Int     @default(1) //  所属天数序号，从1开始
 
   status            TaskStatus     @default(WAITING)
@@ -312,7 +312,7 @@ model UserTask {
   actual_time_end   DateTime? // 实际结束时间
   last_heartbeat_at DateTime? // 心跳时间 仅 PROGRESS 状态下更新
   status            TaskStatus     @default(WAITING)
-  can_divisible     Boolean        @default(false) //  是否可分割
+  can_divisible     Boolean        @default(true) //  是否可分割
 
   created_at        DateTime            @default(now())
   updated_at        DateTime            @default(now()) @updatedAt
