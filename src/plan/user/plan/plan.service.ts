@@ -185,6 +185,35 @@ export class UserPlanService {
           }
         });
       }
+
+      // 4. 从limit_hour生成UserPlanDayTrack记录
+      let limitHour = template.limit_hour;
+      if (typeof limitHour === 'string') {
+        try {
+          limitHour = JSON.parse(limitHour);
+        } catch (e) {
+          limitHour = {};
+        }
+      }
+      if (!limitHour || typeof limitHour !== 'object') {
+        limitHour = {};
+      }
+
+      // 为每一天创建跟踪记录
+      for (let dayNo = 1; dayNo <= template.total_days; dayNo++) {
+        const dayLimit = limitHour[dayNo] || limitHour[dayNo.toString()] || null;
+        if (dayLimit !== null && typeof dayLimit === 'number') {
+          await prisma.userPlanDayTrack.create({
+            data: {
+              plan_id: userPlan.id,
+              date_no: dayNo,
+              total_time: dayLimit,
+              is_complete: false,
+            },
+          });
+        }
+      }
+
       return true;
       // return { userPlan, userTaskGroups, userTasks };
     });

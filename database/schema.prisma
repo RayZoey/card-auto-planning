@@ -250,6 +250,24 @@ model UserPlan {
   UserTaskScheduler UserTaskScheduler[]
   UserTaskGroup UserTaskGroup[]
   UserTask UserTask[]
+  UserPlanDayTrack UserPlanDayTrack[]
+}
+
+//  用户日跟踪标记
+model UserPlanDayTrack {
+  id         Int      @id @default(autoincrement())
+  plan_id    Int
+  plan       UserPlan @relation(fields: [plan_id], references: [id])
+  date_no    Int //  日期序号，从1开始
+  is_complete Boolean @default(false) //  该日是否已完成（打卡完成）
+  completed_at DateTime? @db.DateTime(3) //  完成时间
+  total_time Int @default(0) //  该日计划总时间（分钟）
+
+  created_at DateTime @default(now())
+  updated_at DateTime @default(now()) @updatedAt
+
+  @@unique([plan_id, date_no])
+  @@map("user_plan_day_track")
 }
 
 //  用户任务集

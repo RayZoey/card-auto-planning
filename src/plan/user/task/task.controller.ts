@@ -18,6 +18,7 @@ import { UserTaskQueryCondition } from './task.query-condition';
 import { UserTaskQuery } from './task.query';
 import { UserTaskCreateDto } from './task.create.dto';
 import { UserTaskUpdateDto } from './task.update.dto';
+import { MarkDayCompleteDto, AdvanceNextDayTasksDto } from './task.day-complete.dto';
 import { TaskStatus } from '@prisma/client';
 
 @Controller('user-task')
@@ -94,5 +95,50 @@ export class UserTaskController {
       data: res,
       res: '成功',
     }; 
+  }
+
+  //  标记今日所有任务已完成（完成打卡）
+  @Post('mark-day-complete')
+  @UseGuards(JwtAuthGuard, RoleGuard('miniUser'))
+  async markDayComplete(@Req() req, @Body() dto: MarkDayCompleteDto) {
+    const userId = req.user.accountId;
+    const res = await this.service.markDayComplete(userId, dto.plan_id, dto.date_no);
+    return {
+      code: HttpStatus.OK,
+      data: res,
+      res: '成功',
+    };
+  }
+
+  //  提前次日任务到今日
+  @Post('advance-next-day-tasks')
+  @UseGuards(JwtAuthGuard, RoleGuard('miniUser'))
+  async advanceNextDayTasks(@Req() req, @Body() dto: AdvanceNextDayTasksDto) {
+    const userId = req.user.accountId;
+    const res = await this.service.advanceNextDayTasks(
+      userId,
+      dto.plan_id,
+      dto.date_no,
+      dto.next_day_task_ids,
+      dto.need_auto_fill
+    );
+    return {
+      code: HttpStatus.OK,
+      data: res,
+      res: '成功',
+    };
+  }
+
+  //  获取计划的每日进度信息
+  @Get('plan-day-progress/:planId')
+  @UseGuards(JwtAuthGuard, RoleGuard('miniUser'))
+  async getPlanDayProgress(@Req() req, @Param('planId') planId: number) {
+    const userId = req.user.accountId;
+    const res = await this.service.getPlanDayProgress(userId, planId);
+    return {
+      code: HttpStatus.OK,
+      data: res,
+      res: '成功',
+    };
   }
 }
