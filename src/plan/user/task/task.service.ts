@@ -2,7 +2,7 @@
  * @Author: Ray lighthouseinmind@yeah.net
  * @Date: 2025-07-08 14:59:59
  * @LastEditors: Reflection lighthouseinmind@yeah.net
- * @LastEditTime: 2025-11-13 22:09:37
+ * @LastEditTime: 2025-11-30 14:19:45
  * @FilePath: /card-backend/src/card/pdf-print-info/pdf-print-info.service.ts
  * @Description: 这是默认设置,请设置`customMade`, 打开koroFileHeader查看配置 进行设置: https://github.com/OBKoro1/koro1FileHeader/wiki/%E9%85%8D%E7%BD%AE
  */
@@ -26,6 +26,28 @@ export class UserTaskService {
 
   //  标记今日所有任务已完成（完成打卡）
   async markDayComplete(userId: number, planId: number, dateNo: number) {
+    //  检查dateNo之前是否有未关闭的date
+    const previousDayTracks = await this.prismaService.userPlanDayTrack.findMany({
+      where: {
+        plan_id: planId,
+        date_no: { lt: dateNo },
+        is_complete: false,
+      },
+    });
+    if (previousDayTracks.length > 0) {
+      throw new HttpException('第' + dateNo + '天之前有未关闭的日期，无法打卡', HttpStatus.BAD_REQUEST);
+    }
+    //  检查当日是否已经打卡
+    const existingTrack = await this.prismaService.userPlanDayTrack.findFirst({
+      where: {
+        plan_id: planId,
+        date_no: dateNo,
+        is_complete: true,
+      },
+    });
+    if (existingTrack) {
+      throw new HttpException('第' + dateNo + '天已经打卡', HttpStatus.BAD_REQUEST);
+    }
     return await this.prismaService.$transaction(async (tx) => {
       // 验证计划属于该用户
       const plan = await tx.userPlan.findFirst({
@@ -35,7 +57,7 @@ export class UserTaskService {
         },
       });
       if (!plan) {
-        throw new Error('计划不存在或不属于当前用户');
+        throw new HttpException('计划不存在或不属于当前用户', HttpStatus.BAD_REQUEST);
       }
 
       // 获取该日所有未完成的任务
@@ -43,12 +65,17 @@ export class UserTaskService {
         where: {
           plan_id: planId,
           date_no: dateNo,
-          status: { not: TaskStatus.COMPLETE },
+          status: { not: { in: [TaskStatus.COMPLETE, TaskStatus.SKIP] } },
         },
         include: {
           task: true,
         },
       });
+
+      // 如果有未完成的任务，不允许打卡
+      if (dayTasks.length > 0) {
+        throw new HttpException('当日还有未完成的任务，无法打卡', HttpStatus.BAD_REQUEST);
+      }
 
       // 获取该日所有任务（用于统计）
       const allDayTasks = await tx.userTaskScheduler.findMany({
@@ -61,53 +88,8 @@ export class UserTaskService {
         },
       });
 
-      // 将所有未完成的任务标记为完成
-      const now = new Date();
-      let totalActualTime = 0;
-      for (const scheduler of dayTasks) {
-        const task = scheduler.task;
-        if (!task) continue;
-
-        // 如果任务正在进行中或暂停，需要计算实际时间
-        let actualTime = task.actual_time || 0;
-        if (task.status === TaskStatus.PROGRESS && task.segment_start) {
-          const min = Math.floor(moment(now).diff(moment(task.segment_start), 'minutes'));
-          actualTime += Math.max(0, min);
-        } else if (task.status === TaskStatus.PAUSE && task.last_heartbeat_at && task.segment_start) {
-          const min = Math.floor(moment(task.last_heartbeat_at).diff(moment(task.segment_start), 'minutes'));
-          actualTime += Math.max(0, min);
-        }
-
-        totalActualTime += actualTime;
-
-        await tx.userTask.update({
-          where: { id: task.id },
-          data: {
-            status: TaskStatus.COMPLETE,
-            actual_time: actualTime,
-            actual_time_end: now,
-          },
-        });
-
-        await tx.userTaskScheduler.update({
-          where: { task_id: task.id },
-          data: {
-            status: TaskStatus.COMPLETE,
-          },
-        });
-
-        // 记录日志
-        await tx.userTaskLog.create({
-          data: {
-            user_task_id: task.id,
-            from_status: task.status,
-            to_status: TaskStatus.COMPLETE,
-            created_at: now,
-          },
-        });
-      }
-
       // 更新或创建每日跟踪记录，标记为完成
+      const now = new Date();
       const existingTrack = await tx.userPlanDayTrack.findFirst({
         where: {
           plan_id: planId,
@@ -137,7 +119,181 @@ export class UserTaskService {
         });
       }
 
-      return { success: true, completedCount: dayTasks.length };
+      return { success: true, completedCount: 0 };
+    });
+  }
+
+  //  处理当日未完成任务（跳过或延期）
+  async processDayTasks(
+    userId: number,
+    planId: number,
+    dateNo: number,
+    tasks: Array<{ task_id: number; action: 'skip' | 'postpone'; need_auto_fill?: boolean }>
+  ) {
+    return await this.prismaService.$transaction(async (tx) => {
+      // 验证计划属于该用户
+      const plan = await tx.userPlan.findFirst({
+        where: {
+          id: planId,
+          user_id: userId,
+        },
+      });
+      if (!plan) {
+        throw new HttpException('计划不存在或不属于当前用户', HttpStatus.BAD_REQUEST);
+      }
+
+      // 获取该日所有未完成/未跳过的任务
+      const incompleteTasks = await tx.userTaskScheduler.findMany({
+        where: {
+          plan_id: planId,
+          date_no: dateNo,
+          status: { not: { in: [TaskStatus.COMPLETE, TaskStatus.SKIP] } },
+        },
+        include: {
+          task: true,
+        },
+      });
+
+      // 验证任务数量是否相等
+      if (tasks.length !== incompleteTasks.length) {
+        throw new HttpException(
+          `任务数量不匹配：当前有 ${incompleteTasks.length} 个未完成任务，但提供了 ${tasks.length} 个任务处理信息`,
+          HttpStatus.BAD_REQUEST
+        );
+      }
+
+      // 验证所有任务ID是否都在未完成任务列表中
+      const incompleteTaskIds = new Set(incompleteTasks.map(t => t.task_id));
+      const providedTaskIds = new Set(tasks.map(t => t.task_id));
+      
+      if (incompleteTaskIds.size !== providedTaskIds.size || 
+          [...incompleteTaskIds].some(id => !providedTaskIds.has(id))) {
+        throw new HttpException('提供的任务ID与当日未完成任务不匹配', HttpStatus.BAD_REQUEST);
+      }
+
+      const nextDayNo = dateNo + 1;
+      const now = new Date();
+      let skippedCount = 0;
+      let postponedCount = 0;
+      const postponedTasks: Array<{ scheduler: any; needAutoFill: boolean }> = [];
+
+      // 循环处理每个任务
+      for (const taskInfo of tasks) {
+        const scheduler = incompleteTasks.find(t => t.task_id === taskInfo.task_id);
+        if (!scheduler) {
+          continue; // 已经验证过，这里应该不会发生
+        }
+
+        if (taskInfo.action === 'skip') {
+          // 跳过任务：标记为SKIP状态
+          await tx.userTask.update({
+            where: { id: scheduler.task_id },
+            data: {
+              status: TaskStatus.SKIP,
+            },
+          });
+
+          await tx.userTaskScheduler.update({
+            where: { task_id: scheduler.task_id },
+            data: {
+              status: TaskStatus.SKIP,
+            },
+          });
+
+          // 记录日志
+          await tx.userTaskLog.create({
+            data: {
+              user_task_id: scheduler.task_id,
+              from_status: scheduler.task.status,
+              to_status: TaskStatus.SKIP,
+              created_at: now,
+            },
+          });
+
+          skippedCount++;
+        } else if (taskInfo.action === 'postpone') {
+          // 延期任务：先记录，稍后统一处理
+          postponedTasks.push({
+            scheduler,
+            needAutoFill: taskInfo.need_auto_fill || false,
+          });
+        }
+      }
+
+      // 处理延期任务
+      const tasksNeedAutoFill = postponedTasks.filter(t => t.needAutoFill);
+      const tasksNoAutoFill = postponedTasks.filter(t => !t.needAutoFill);
+
+      // 先处理不填满时间的任务（简单移动）
+      for (const { scheduler } of tasksNoAutoFill) {
+        await this.moveTaskToNextDayTop(tx, scheduler, dateNo);
+        postponedCount++;
+      }
+
+      // 再处理需要填满时间的任务（移动并触发联动）
+      for (const { scheduler } of tasksNeedAutoFill) {
+        await this.moveTaskToNextDayTop(tx, scheduler, dateNo);
+        postponedCount++;
+      }
+
+      // 重建计划顺序（所有移动任务后统一重建）
+      await this.rebuildPlanOrders(tx, planId);
+
+      // 更新时间限制（在重建顺序后更新）
+      if (postponedTasks.length > 0) {
+        // 更新次日时间限制
+        const nextDayLimit = await this.getDayLimitFromTrack(tx, planId, nextDayNo);
+        if (nextDayLimit !== null) {
+          const nextDayTasks = await tx.userTaskScheduler.findMany({
+            where: {
+              plan_id: planId,
+              date_no: nextDayNo,
+            },
+            include: {
+              task: true,
+            },
+          });
+          const nextDayTotalTime = nextDayTasks.reduce(
+            (sum, item) => sum + (item.task?.occupation_time || 0),
+            0
+          );
+          await this.updatePlanDayTrackLimit(tx, planId, nextDayNo, nextDayTotalTime);
+        }
+
+        // 更新当日时间限制
+        const todayLimit = await this.getDayLimitFromTrack(tx, planId, dateNo);
+        if (todayLimit !== null) {
+          const todayTasks = await tx.userTaskScheduler.findMany({
+            where: {
+              plan_id: planId,
+              date_no: dateNo,
+            },
+            include: {
+              task: true,
+            },
+          });
+          const todayTotalTime = todayTasks.reduce(
+            (sum, item) => sum + (item.task?.occupation_time || 0),
+            0
+          );
+          await this.updatePlanDayTrackLimit(tx, planId, dateNo, todayTotalTime);
+        }
+
+        // 对于需要填满时间的任务，处理次日可能的超时问题（触发后续任务联动移动）
+        if (tasksNeedAutoFill.length > 0) {
+          await this.handleDayOverflow(tx, {
+            planId: planId,
+            dayNo: nextDayNo,
+            plan: plan,
+          });
+        }
+      }
+
+      return {
+        success: true,
+        skippedCount,
+        postponedCount,
+      };
     });
   }
 

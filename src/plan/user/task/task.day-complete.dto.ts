@@ -36,3 +36,30 @@ export class AdvanceNextDayTasksDto {
   need_auto_fill: boolean;
 }
 
+export class TaskActionDto {
+  @Expose({name: 'task_id'})
+  @Type(() => Number)
+  task_id: number;
+
+  @Expose({name: 'action'})
+  action: 'skip' | 'postpone';
+
+  @Expose({name: 'need_auto_fill'})
+  @Type(() => Boolean)
+  need_auto_fill?: boolean;
+}
+
+export class ProcessDayTasksDto {
+  @Expose({name: 'plan_id'})
+  @Type(() => Number)
+  plan_id: number;
+
+  @Expose({name: 'date_no'})
+  @Type(() => Number)
+  date_no: number;
+
+  @Expose({name: 'tasks'})
+  @Type(() => TaskActionDto)
+  tasks: TaskActionDto[];
+}
+
