@@ -128,7 +128,8 @@ export class UserTaskService {
     userId: number,
     planId: number,
     dateNo: number,
-    tasks: Array<{ task_id: number; action: 'skip' | 'postpone'; need_auto_fill?: boolean }>
+    tasks: Array<{ task_id: number; action: 'skip' | 'postpone' }>,
+    needAutoFill: boolean
   ) {
     return await this.prismaService.$transaction(async (tx) => {
       // 验证计划属于该用户
@@ -175,7 +176,7 @@ export class UserTaskService {
       const now = new Date();
       let skippedCount = 0;
       let postponedCount = 0;
-      const postponedTasks: Array<{ scheduler: any; needAutoFill: boolean }> = [];
+      const postponedTasks: Array<{ scheduler: any }> = [];
 
       // 循环处理每个任务
       for (const taskInfo of tasks) {
@@ -215,14 +216,13 @@ export class UserTaskService {
           // 延期任务：先记录，稍后统一处理
           postponedTasks.push({
             scheduler,
-            needAutoFill: taskInfo.need_auto_fill || false,
           });
         }
       }
 
       // 处理延期任务
-      const tasksNeedAutoFill = postponedTasks.filter(t => t.needAutoFill);
-      const tasksNoAutoFill = postponedTasks.filter(t => !t.needAutoFill);
+      const tasksNeedAutoFill = needAutoFill ? postponedTasks : [];
+      const tasksNoAutoFill = needAutoFill ? [] : postponedTasks;
 
       // 先处理不填满时间的任务（简单移动）
       for (const { scheduler } of tasksNoAutoFill) {
@@ -288,6 +288,47 @@ export class UserTaskService {
           });
         }
       }
+
+      // 所有任务处理完毕后，标记当日为已完成
+      const nowFinish = new Date();
+      const existingTrack = await tx.userPlanDayTrack.findFirst({
+        where: {
+          plan_id: planId,
+          date_no: dateNo,
+        },
+      });
+
+      if (existingTrack) {
+        await tx.userPlanDayTrack.update({
+          where: { id: existingTrack.id },
+          data: {
+            is_complete: true,
+            completed_at: nowFinish,
+          },
+        });
+      } else {
+        const todayTasksForStat = await tx.userTaskScheduler.findMany({
+          where: {
+            plan_id: planId,
+            date_no: dateNo,
+          },
+          include: { task: true },
+        });
+        const totalTime = todayTasksForStat.reduce(
+          (sum, item) => sum + (item.task?.occupation_time || 0),
+          0
+        );
+        await tx.userPlanDayTrack.create({
+          data: {
+            plan_id: planId,
+            date_no: dateNo,
+            is_complete: true,
+            completed_at: nowFinish,
+            total_time: totalTime,
+          },
+        });
+      }
+      
 
       return {
         success: true,

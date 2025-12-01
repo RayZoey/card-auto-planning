@@ -2,7 +2,7 @@
  * @Author: Ray lighthouseinmind@yeah.net
  * @Date: 2025-07-08 14:59:59
  * @LastEditors: Reflection lighthouseinmind@yeah.net
- * @LastEditTime: 2025-11-29 11:49:02
+ * @LastEditTime: 2025-12-01 18:44:56
  * @FilePath: /card-auto-planning/src/plan/platform/plan-template/plan-template.controller.ts
  * @Description: 这是默认设置,请设置`customMade`, 打开koroFileHeader查看配置 进行设置: https://github.com/OBKoro1/koro1FileHeader/wiki/%E9%85%8D%E7%BD%AE
  */
@@ -36,23 +36,6 @@ export class UserTaskController {
     };  
   }
   
-//   {
-//     "name": "零散任务",
-//     "plan_id": 52,
-//     "background": "#DAA520",
-//     "remark": "备注",
-//     "timing_type": "POMODORO",
-//     "occupation_time": 60,
-//     "need_auto_plan": true,
-//     "need_auto_fill": true,
-//     "UserTaskScheduler": {
-//         "priority": 9999,
-//         "global_sort": 2,
-//         "day_sort": 2,
-//         "can_divisible": true,
-//         "date_no": 1
-//     }
-// }
   @Post()
   @UseGuards(JwtAuthGuard, RoleGuard('miniUser'))
   async create(@Req() req, @Body() createDto: UserTaskCreateDto, @Body('need_auto_plan') needAutoPlan: boolean, @Body('need_auto_fill') needAutoFill: boolean) {
@@ -146,26 +129,6 @@ export class UserTaskController {
     };
   }
 
-  // {
-  //   "plan_id": 1,
-  //   "date_no": 1,
-  //   "tasks": [
-  //     {
-  //       "task_id": 10,
-  //       "action": "skip"
-  //     },
-  //     {
-  //       "task_id": 11,
-  //       "action": "postpone",
-  //       "need_auto_fill": false
-  //     },
-  //     {
-  //       "task_id": 12,
-  //       "action": "postpone",
-  //       "need_auto_fill": true
-  //     }
-  //   ]
-  // }
   //  处理当日未完成任务（跳过或延期）
   @Post('process-day-tasks')
   @UseGuards(JwtAuthGuard, RoleGuard('miniUser'))
@@ -175,7 +138,8 @@ export class UserTaskController {
       userId,
       dto.plan_id,
       dto.date_no,
-      dto.tasks
+      dto.tasks,
+      dto.need_auto_fill
     );
     return {
       code: HttpStatus.OK,

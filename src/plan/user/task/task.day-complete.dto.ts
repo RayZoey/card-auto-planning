@@ -43,10 +43,6 @@ export class TaskActionDto {
 
   @Expose({name: 'action'})
   action: 'skip' | 'postpone';
-
-  @Expose({name: 'need_auto_fill'})
-  @Type(() => Boolean)
-  need_auto_fill?: boolean;
 }
 
 export class ProcessDayTasksDto {
@@ -57,6 +53,10 @@ export class ProcessDayTasksDto {
   @Expose({name: 'date_no'})
   @Type(() => Number)
   date_no: number;
+
+  @Expose({name: 'need_auto_fill'})
+  @Type(() => Boolean)
+  need_auto_fill: boolean;
 
   @Expose({name: 'tasks'})
   @Type(() => TaskActionDto)
