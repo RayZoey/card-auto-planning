@@ -68,9 +68,9 @@ import { TeacherModule } from './teacher/teacher.module';
   ],
 })
 export class AppModule {
-    configure(consumer: MiddlewareConsumer) {
-    consumer
-      .apply(DeepTimezoneMiddleware)
-      .forRoutes('*');
-  }
+  //   configure(consumer: MiddlewareConsumer) {
+  //   consumer
+  //     .apply(DeepTimezoneMiddleware)
+  //     .forRoutes('*');
+  // }
 }

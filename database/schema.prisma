@@ -386,8 +386,8 @@ model UserAndTeacherRelation {
   user       User     @relation(fields: [user_id], references: [id])
   teacher_id Int
   teacher    Teacher  @relation(fields: [teacher_id], references: [id])
-  start_time DateTime @db.DateTime(3) //  结束时间
-  end_time   DateTime @db.DateTime(3) //  开始时间
+  start_time DateTime  //  结束时间
+  end_time   DateTime  //  开始时间
   is_expired Boolean  @default(false) //  是否过期
 
   created_at DateTime @default(now())

@@ -2,7 +2,7 @@
  * @Author: Ray lighthouseinmind@yeah.net
  * @Date: 2025-04-14 10:51:15
  * @LastEditors: Reflection lighthouseinmind@yeah.net
- * @LastEditTime: 2025-08-29 00:34:13
+ * @LastEditTime: 2025-12-16 00:58:42
  * @FilePath: /water/src/wechat/user/user.controller.ts
  * @Description: 这是默认设置,请设置`customMade`, 打开koroFileHeader查看配置 进行设置: https://github.com/OBKoro1/koro1FileHeader/wiki/%E9%85%8D%E7%BD%AE
  */
@@ -57,6 +57,23 @@ export class UserController {
     });
   }
 
+
+  //  绑定小程序用户督学服务导师
+  @Get('/mini-user/get-bind-teacher-info')
+  @UseGuards(JwtAuthGuard, RoleGuard('miniUser'))
+  async getBindTeacherInfo(
+    @Req() req, 
+    @Res() response: Response,
+  ) {
+    const userId = req.user.accountId;
+    const res = await this.service.getBindTeacherInfo(userId);
+    response.status(HttpStatus.OK).send({
+      code: HttpStatus.OK,
+      data: res,
+      res: '成功',
+    });
+  }
+
   //  绑定小程序用户督学服务导师
   @Post('/mini-user/bind-teacher')
   @UseGuards(JwtAuthGuard, RoleGuard('miniUser'))
@@ -68,7 +85,11 @@ export class UserController {
   ) {
     const userId = req.user.accountId;
     const res = await this.service.bindTeacher(userId, teacherId, days);
-    response.status(HttpStatus.CREATED).send(res);
+    response.status(HttpStatus.CREATED).send({
+      code: HttpStatus.OK,
+      data: res,
+      res: '成功',
+    });
   }
 
   @Post('/mini-user/login')
