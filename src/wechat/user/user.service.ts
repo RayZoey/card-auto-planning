@@ -196,6 +196,18 @@ export class UserService {
     return user;
   }
 
+  async getBindTeacherInfo(userId: number){
+    const record = await this.prismaService.userAndTeacherRelation.findFirst({
+      where: {
+        user_id: userId,
+      },
+      include: {
+        teacher: true,
+      },
+    });
+    return record;
+  }
+
   //  绑定督学导师
   async bindTeacher(userId: number, teacherId: number, days: number){
     const teacher = await this.prismaService.teacher.findFirst({
