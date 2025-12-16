@@ -2,7 +2,7 @@
  * @Author: Ray lighthouseinmind@yeah.net
  * @Date: 2025-07-08 14:59:59
  * @LastEditors: Reflection lighthouseinmind@yeah.net
- * @LastEditTime: 2025-11-09 22:16:46
+ * @LastEditTime: 2025-12-16 20:05:56
  * @FilePath: /card-backend/src/card/pdf-print-info/pdf-print-info.service.ts
  * @Description: 这是默认设置,请设置`customMade`, 打开koroFileHeader查看配置 进行设置: https://github.com/OBKoro1/koro1FileHeader/wiki/%E9%85%8D%E7%BD%AE
  */
@@ -25,6 +25,24 @@ export class UserPlanService {
     private readonly queryConditionParser: QueryConditionParser,
     private readonly autoPlanningService: AutoPlanningService
   ) {}
+
+  //  获取用户计划中最新一天没有完成的任务列表
+  async getLatestUncompletedTasks(userId: number, planId: number) {
+    return await this.prismaService.userPlanDayTrack.findMany({
+      where: {
+        plan_id: planId,
+        is_complete: false,
+      },
+      include: {
+        
+      },
+      orderBy: {
+        date_no: 'asc'
+      },
+      take: 1,
+    });
+    
+  }
 
   async findAll(queryCondition: UserPlanQueryCondition, offset: number, limit: number) {
     const filter: QueryFilter = this.queryConditionParser.parse(queryCondition);
@@ -80,12 +98,12 @@ export class UserPlanService {
         id: id,
         user_id: userId,
         status: {
-          not: PlanStatus.COMPLETE
+          notIn: [PlanStatus.COMPLETE, PlanStatus.CANCEL]
         }
       }
     });
     if (!plan){
-      throw new Error('未找到该计划信息/该计划不属于当前请求用户/该计划已完结');
+      throw new Error('未找到该计划信息/该计划已完结或取消');
     }
     return this.prismaService.userPlan.update({
       data: dto,
@@ -186,33 +204,21 @@ export class UserPlanService {
         });
       }
 
-      // 4. 从limit_hour生成UserPlanDayTrack记录
-      let limitHour = template.limit_hour;
-      if (typeof limitHour === 'string') {
-        try {
-          limitHour = JSON.parse(limitHour);
-        } catch (e) {
-          limitHour = {};
-        }
-      }
-      if (!limitHour || typeof limitHour !== 'object') {
-        limitHour = {};
-      }
-
+      // 4. 生成UserPlanDayTrack记录
       // 为每一天创建跟踪记录
       for (let dayNo = 1; dayNo <= template.total_days; dayNo++) {
-        const dayLimit = limitHour[dayNo] || limitHour[dayNo.toString()] || null;
-        if (dayLimit !== null && typeof dayLimit === 'number') {
-          await prisma.userPlanDayTrack.create({
-            data: {
-              plan_id: userPlan.id,
-              date_no: dayNo,
-              total_time: dayLimit,
-              is_complete: false,
-            },
-          });
-        }
+        await prisma.userPlanDayTrack.create({
+          data: {
+            plan_id: userPlan.id,
+            date_no: dayNo,
+            total_time: userPlan.total_time,
+            is_complete: false,
+          },
+        });
       }
+      //  关联UserPlanDayTrack记录与userTaskScheduler
+      
+
 
       return true;
       // return { userPlan, userTaskGroups, userTasks };

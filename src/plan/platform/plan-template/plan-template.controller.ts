@@ -2,7 +2,7 @@
  * @Author: Reflection lighthouseinmind@yeah.net
  * @Date: 2025-11-06 18:49:16
  * @LastEditors: Reflection lighthouseinmind@yeah.net
- * @LastEditTime: 2025-11-09 16:43:37
+ * @LastEditTime: 2025-12-16 16:36:44
  * @FilePath: /card-auto-planning/src/plan/platform/plan-template/plan-template.controller.ts
  * @Description: 这是默认设置,请设置`customMade`, 打开koroFileHeader查看配置 进行设置: https://github.com/OBKoro1/koro1FileHeader/wiki/%E9%85%8D%E7%BD%AE
  */
@@ -29,6 +29,18 @@ import { PlatformPlanTemplateUpdateDto } from './plan-template.update.dto';
 @Controller('platform-plan-template')
 export class PlatformPlanTemplateController {
   constructor(private readonly service: PlatformPlanTemplateService, private offsetCalculator: OffsetCalculator) {}
+
+
+  @Get('/enable-template')
+  @UseGuards(JwtAuthGuard, RoleGuard('miniUser'))
+  async getEnableTemplate(@Req() request: Request) {
+    const data = await this.service.getEnableTemplate();
+    return {                                     
+      code: HttpStatus.OK,
+      data: data,
+      res: '成功',
+    }; 
+  }
 
   @Get()
   @UseGuards(JwtAuthGuard, RoleGuard('backUser'))

@@ -146,6 +146,7 @@ enum PlanStatus {
   PROGRESS // 进行中
   PAUSE //  暂停
   COMPLETE //  完成
+  CANCEL //  取消
 
   @@map("plan_status")
 }
@@ -265,6 +266,7 @@ model UserPlanDayTrack {
 
   created_at DateTime @default(now())
   updated_at DateTime @default(now()) @updatedAt
+  // UserTaskScheduler UserTaskScheduler[]
 
   @@unique([plan_id, date_no])
   @@map("user_plan_day_track")
@@ -288,8 +290,12 @@ model UserTaskGroup {
 
 //  用户任务日期调度
 model UserTaskScheduler {
+  
   plan_id              Int
   plan                 UserPlan      @relation(fields: [plan_id], references: [id])
+
+  // track_id  Int //  关联的日跟踪记录id
+  // track UserPlanDayTrack @relation(fields: [track_id], references: [id])
 
   task_id Int      @unique
   task    UserTask @relation(fields: [task_id], references: [id])
