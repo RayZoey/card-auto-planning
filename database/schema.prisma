@@ -83,7 +83,6 @@ model User {
   point                  Int                      @default(0) //  总积分
   created_at             DateTime                 @default(now())
   UserPlan               UserPlan[]
-  PresetsTaskTag         PresetsTaskTag[]
   UserTask               UserTask[]
   UserTaskGroup          UserTaskGroup[]
   UserAndTeacherRelation UserAndTeacherRelation[]
@@ -151,18 +150,18 @@ enum PlanStatus {
   @@map("plan_status")
 }
 
-//  任务tag，创建用户时自带五个类目,可自行维护增加变更
-model PresetsTaskTag {
+//  任务tag
+model PresetTaskTag {
   id       Int     @id @default(autoincrement())
-  user_id  Int
-  user     User    @relation(fields: [user_id], references: [id])
   tag_name String  @db.VarChar(80)
-  tag_icon String? @db.VarChar(200)
+  tag_icon String? @db.Text
+  platformTask PlatformTask[]
+  userTask  UserTask[]
 
   created_at DateTime @default(now())
   updated_at DateTime @default(now()) @updatedAt
 
-  @@map("task_tag")
+  @@map("preset_task_tag")
 }
 
 //  平台预设任务集
@@ -198,6 +197,8 @@ model PlatformTaskGroupAndTaskRelation {
 model PlatformTask {
   id                   Int            @id @default(autoincrement())
   name                 String         @db.VarChar(80) //  任务名称
+  preset_task_tag_id Int?
+  preset_task_tag    PresetTaskTag? @relation(fields: [preset_task_tag_id], references: [id])
   background           String?        @db.VarChar(10) //  背景色
   suggested_time_start String?        @db.VarChar(20) //  建议时段开始
   suggested_time_end   String?        @db.VarChar(20) //  建议时段结束
@@ -266,7 +267,7 @@ model UserPlanDayTrack {
 
   created_at DateTime @default(now())
   updated_at DateTime @default(now()) @updatedAt
-  // UserTaskScheduler UserTaskScheduler[]
+  UserTaskScheduler UserTaskScheduler[]
 
   @@unique([plan_id, date_no])
   @@map("user_plan_day_track")
@@ -290,12 +291,12 @@ model UserTaskGroup {
 
 //  用户任务日期调度
 model UserTaskScheduler {
-  
+  //  关联的日跟踪记录id
+  track_id Int
+  track    UserPlanDayTrack @relation(fields: [track_id], references: [id])
+
   plan_id              Int
   plan                 UserPlan      @relation(fields: [plan_id], references: [id])
-
-  // track_id  Int //  关联的日跟踪记录id
-  // track UserPlanDayTrack @relation(fields: [track_id], references: [id])
 
   task_id Int      @unique
   task    UserTask @relation(fields: [task_id], references: [id])
@@ -321,6 +322,8 @@ model UserTask {
   group                UserTaskGroup? @relation(fields: [task_group_id], references: [id])
   user_id              Int
   user                 User           @relation(fields: [user_id], references: [id])
+  preset_task_tag_id Int?
+  preset_task_tag    PresetTaskTag? @relation(fields: [preset_task_tag_id], references: [id])
   background           String?        @db.VarChar(10) //  背景色
   suggested_time_start String?        @db.VarChar(20) //  建议时段开始
   suggested_time_end   String?        @db.VarChar(20) //  建议时段结束

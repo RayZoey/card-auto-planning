@@ -2,7 +2,7 @@
  * @Author: Ray lighthouseinmind@yeah.net
  * @Date: 2025-07-08 14:59:59
  * @LastEditors: Reflection lighthouseinmind@yeah.net
- * @LastEditTime: 2025-11-30 14:19:45
+ * @LastEditTime: 2025-12-16 22:20:24
  * @FilePath: /card-backend/src/card/pdf-print-info/pdf-print-info.service.ts
  * @Description: 这是默认设置,请设置`customMade`, 打开koroFileHeader查看配置 进行设置: https://github.com/OBKoro1/koro1FileHeader/wiki/%E9%85%8D%E7%BD%AE
  */
@@ -23,6 +23,25 @@ export class UserTaskService {
     private readonly baseService: BaseService,
     private readonly queryConditionParser: QueryConditionParser
   ) {}
+
+  // 确保某计划某日的日跟踪存在，返回记录
+  private async ensurePlanDayTrack(prismaService: any, planId: number, dayNo: number) {
+    return prismaService.userPlanDayTrack.upsert({
+      where: {
+        plan_id_date_no: {
+          plan_id: planId,
+          date_no: dayNo,
+        },
+      },
+      update: {},
+      create: {
+        plan_id: planId,
+        date_no: dayNo,
+        total_time: 0,
+        is_complete: false,
+      },
+    });
+  }
 
   //  标记今日所有任务已完成（完成打卡）
   async markDayComplete(userId: number, planId: number, dateNo: number) {
@@ -359,6 +378,7 @@ export class UserTaskService {
       }
 
       const nextDayNo = dateNo + 1;
+      const todayTrack = await this.ensurePlanDayTrack(tx, planId, dateNo);
 
       // 获取次日要移动的任务
       const tasksToMove = await tx.userTaskScheduler.findMany({
@@ -433,6 +453,7 @@ export class UserTaskService {
           data: {
             date_no: dateNo,
             day_sort: nextDaySort,
+            track_id: todayTrack.id,
           },
         });
 
@@ -531,6 +552,7 @@ export class UserTaskService {
           plan: { connect: { id: dto.plan_id } },
           name: dto.name,
           status: dto.status,
+          preset_task_tag: { connect: { id:  dto.preset_task_tag_id } },
           group: dto.task_group_id ? { connect: { id: dto.task_group_id } } : undefined,
           background: dto.background,
           suggested_time_start: dto.suggested_time_start,
@@ -542,19 +564,23 @@ export class UserTaskService {
           occupation_time: dto.occupation_time,
         }
       });
-      
-      const scheduler = await tx.userTaskScheduler.create({
-        data: {
-          plan: { connect: { id: dto.plan_id } },
-          task: { connect: { id: task.id } },
-          priority: dto.UserTaskScheduler.priority,
-          global_sort: dto.UserTaskScheduler.global_sort,
-          group_sort: dto.UserTaskScheduler.group_sort,
-          day_sort: dto.UserTaskScheduler.day_sort,
-          date_no: dto.UserTaskScheduler.date_no || 1,
-          can_divisible: dto.can_divisible,
-        }
-      });
+
+      const schedulerDateNo = dto.UserTaskScheduler.date_no || 1;
+      const track = await this.ensurePlanDayTrack(tx, dto.plan_id, schedulerDateNo);
+
+      const schedulerData: any = {
+        plan_id: dto.plan_id,
+        task_id: task.id,
+        track_id: track.id,
+        priority: dto.UserTaskScheduler.priority,
+        global_sort: dto.UserTaskScheduler.global_sort,
+        group_sort: dto.UserTaskScheduler.group_sort,
+        day_sort: dto.UserTaskScheduler.day_sort,
+        date_no: schedulerDateNo,
+        can_divisible: dto.can_divisible,
+      };
+
+      const scheduler = await tx.userTaskScheduler.create({ data: schedulerData });
 
       // 如果不需要自动规划或者不需要填充时间，只调整当天其他任务的 day_sort
       if (!needAutoPlan || !needAutoFill) {
@@ -652,7 +678,6 @@ export class UserTaskService {
         throw new Error('任务不存在');
       }
       if (needAutoPlan) {
-        console.log(1)
         await this.handleAutoPlanDeletion(tx, schedulerForTx, needAutoFill);
       } else {
         await this.moveTaskDecrement(tx, schedulerForTx);
@@ -1079,6 +1104,7 @@ export class UserTaskService {
         plan_id: task.plan_id,
         name: fillName,
         task_group_id: task.task_group_id,
+        preset_task_tag: task.preset_task_tag_id,
         user_id: task.user_id,
         background: task.background,
         suggested_time_start: task.suggested_time_start,
@@ -1093,19 +1119,22 @@ export class UserTaskService {
       },
     });
 
-    await prismaService.userTaskScheduler.create({
-      data: {
-        plan_id: candidate.plan_id,
-        task_id: newTask.id,
-        priority: candidate.priority,
-        global_sort: candidate.global_sort,
-        group_sort: candidate.group_sort,
-        day_sort: daySort,
-        can_divisible: candidate.can_divisible,
-        date_no: targetDayNo,
-        status: candidate.status,
-      },
-    });
+    const targetTrack = await this.ensurePlanDayTrack(prismaService, candidate.plan_id, targetDayNo);
+
+    const schedulerData: any = {
+      plan_id: candidate.plan_id,
+      task_id: newTask.id,
+      priority: candidate.priority,
+      global_sort: candidate.global_sort,
+      group_sort: candidate.group_sort,
+      day_sort: daySort,
+      can_divisible: candidate.can_divisible,
+      date_no: targetDayNo,
+      track_id: targetTrack.id,
+      status: candidate.status,
+    };
+
+    await prismaService.userTaskScheduler.create({ data: schedulerData });
 
     await prismaService.userTask.update({
       where: { id: task.id },
@@ -1136,6 +1165,8 @@ export class UserTaskService {
   }
 
   private async moveSchedulerTask(prismaService, schedulerTask, targetDayNo: number, daySort: number) {
+    const targetTrack = await this.ensurePlanDayTrack(prismaService, schedulerTask.plan_id, targetDayNo);
+
     await prismaService.userTaskScheduler.updateMany({
       where: {
         plan_id: schedulerTask.plan_id,
@@ -1152,6 +1183,7 @@ export class UserTaskService {
       data: {
         date_no: targetDayNo,
         day_sort: daySort,
+        track_id: targetTrack.id,
       },
     });
   }
@@ -1458,6 +1490,7 @@ export class UserTaskService {
         plan: { connect: { id: task.plan_id } },
         name: moveName,
         status: task.status,
+        preset_task_tag: { connect: { id:  task.preset_task_tag_id } },
         group: task.task_group_id ? { connect: { id: task.task_group_id } } : undefined,
         background: task.background,
         suggested_time_start: task.suggested_time_start,
@@ -1473,6 +1506,7 @@ export class UserTaskService {
 
     // 获取次日最顶端的 day_sort（应该是最小的，如果没有任务则为 1）
     const nextDayNo = currentDayNo + 1;
+    const targetTrack = await this.ensurePlanDayTrack(prismaService, candidate.plan_id, nextDayNo);
     const nextDayTopSort = await prismaService.userTaskScheduler.findFirst({
       where: {
         plan_id: candidate.plan_id,
@@ -1497,19 +1531,20 @@ export class UserTaskService {
     }
 
     // 创建新任务的调度信息，放在次日最顶端
-    await prismaService.userTaskScheduler.create({
-      data: {
-        plan: { connect: { id: candidate.plan_id } },
-        task: { connect: { id: newTask.id } },
-        priority: candidate.priority,
-        global_sort: candidate.global_sort,
-        group_sort: candidate.group_sort,
-        day_sort: targetDaySort <= 0 ? 1 : targetDaySort,
-        can_divisible: candidate.can_divisible,
-        date_no: nextDayNo,
-        status: candidate.status,
-      },
-    });
+    const schedulerData: any = {
+      plan_id: candidate.plan_id,
+      task_id: newTask.id,
+      priority: candidate.priority,
+      global_sort: candidate.global_sort,
+      group_sort: candidate.group_sort,
+      day_sort: targetDaySort <= 0 ? 1 : targetDaySort,
+      can_divisible: candidate.can_divisible,
+      date_no: nextDayNo,
+      track_id: targetTrack.id,
+      status: candidate.status,
+    };
+
+    await prismaService.userTaskScheduler.create({ data: schedulerData });
 
     // 更新原任务，保留剩余部分
     await prismaService.userTask.update({
@@ -1525,6 +1560,7 @@ export class UserTaskService {
   // 将任务移到次日最顶端
   private async moveTaskToNextDayTop(prismaService, schedulerTask, currentDayNo: number) {
     const nextDayNo = currentDayNo + 1;
+    const targetTrack = await this.ensurePlanDayTrack(prismaService, schedulerTask.plan_id, nextDayNo);
     
     // 获取次日最顶端的 day_sort
     const nextDayTopSort = await prismaService.userTaskScheduler.findFirst({
@@ -1568,6 +1604,7 @@ export class UserTaskService {
       data: {
         date_no: nextDayNo,
         day_sort: targetDaySort <= 0 ? 1 : targetDaySort,
+        track_id: targetTrack.id,
       },
     });
   }
@@ -1670,14 +1707,14 @@ export class UserTaskService {
         plan_id: planId,
       },
       orderBy: {
-        date_no: 'asc',
+        date_no: 'desc',
       },
     });
 
     // 获取当前日期（相对于计划开始时间）
-    const now = moment();
-    const startTime = moment(plan.planned_start_time);
-    const currentDayNo = Math.max(1, now.diff(startTime, 'days') + 1);
+    // const now = moment();
+    // const startTime = moment(plan.planned_start_time);
+    // const currentDayNo = Math.max(1, now.diff(startTime, 'days') + 1);
 
     // 计算已完成的天数
     const completedDays = dayTracks.filter(track => track.is_complete).map(track => track.date_no);
@@ -1693,13 +1730,13 @@ export class UserTaskService {
         is_complete: track?.is_complete || false,
         completed_at: track?.completed_at || null,
         total_time: track?.total_time || null,
-        is_today: dayNo === currentDayNo,
+        // is_today: dayNo === currentDayNo,
       });
     }
 
     return {
       plan_id: planId,
-      current_day_no: currentDayNo,
+      // current_day_no: currentDayNo,
       total_days: plan.total_days,
       completed_days: completedDays,
       completed_days_count: completedDaysCount,

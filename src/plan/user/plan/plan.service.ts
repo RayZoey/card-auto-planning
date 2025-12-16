@@ -2,7 +2,7 @@
  * @Author: Ray lighthouseinmind@yeah.net
  * @Date: 2025-07-08 14:59:59
  * @LastEditors: Reflection lighthouseinmind@yeah.net
- * @LastEditTime: 2025-12-16 20:05:56
+ * @LastEditTime: 2025-12-16 21:55:37
  * @FilePath: /card-backend/src/card/pdf-print-info/pdf-print-info.service.ts
  * @Description: 这是默认设置,请设置`customMade`, 打开koroFileHeader查看配置 进行设置: https://github.com/OBKoro1/koro1FileHeader/wiki/%E9%85%8D%E7%BD%AE
  */
@@ -34,7 +34,16 @@ export class UserPlanService {
         is_complete: false,
       },
       include: {
-        
+        UserTaskScheduler: {
+          include: {
+            task: {
+              include: {
+                group: true,
+                preset_task_tag: true
+              }
+            }
+          }
+        }
       },
       orderBy: {
         date_no: 'asc'
@@ -151,6 +160,19 @@ export class UserPlanService {
       });
 
       const userTaskGroupsMap = new Map<number, any>();
+      // 预先为每一天创建日跟踪记录，便于后续 scheduler 绑定 track_id
+      const trackIdByDay = new Map<number, number>();
+      for (let dayNo = 1; dayNo <= template.total_days; dayNo++) {
+        const track = await prisma.userPlanDayTrack.create({
+          data: {
+            plan_id: userPlan.id,
+            date_no: dayNo,
+            total_time: userPlan.total_time,
+            is_complete: false,
+          },
+        });
+        trackIdByDay.set(dayNo, track.id);
+      }
 
       // 3. 按PlanTemplateDetail批量生成任务集与任务
       for (const detail of template.PlanTemplateDetail) {
@@ -180,6 +202,7 @@ export class UserPlanService {
             name: detail.platform_task.name,
             user_id: userId,
             task_group_id: userTaskGroupId,
+            preset_task_tag_id:  detail.platform_task.preset_task_tag_id,
             occupation_time: detail.platform_task.occupation_time,
             background: detail.platform_task.background || null,
             suggested_time_start: detail.platform_task.suggested_time_start || null,
@@ -190,35 +213,19 @@ export class UserPlanService {
         });
 
         //  生成用户任务调度数据
-        await prisma.userTaskScheduler.create({
-          data: {
-            plan_id: userPlan.id,
-            task_id: task.id,
-            priority: detail.priority,
-            global_sort: detail.global_sort,
-            group_sort: detail.group_sort,
-            day_sort: detail.day_sort,
-            can_divisible: detail.can_divisible,
-            date_no: detail.date_no
-          }
-        });
+        const schedulerData: any = {
+          plan_id: userPlan.id,
+          task_id: task.id,
+          track_id: trackIdByDay.get(detail.date_no)!,
+          priority: detail.priority,
+          global_sort: detail.global_sort,
+          group_sort: detail.group_sort,
+          day_sort: detail.day_sort,
+          can_divisible: detail.can_divisible,
+          date_no: detail.date_no,
+        };
+        await prisma.userTaskScheduler.create({ data: schedulerData });
       }
-
-      // 4. 生成UserPlanDayTrack记录
-      // 为每一天创建跟踪记录
-      for (let dayNo = 1; dayNo <= template.total_days; dayNo++) {
-        await prisma.userPlanDayTrack.create({
-          data: {
-            plan_id: userPlan.id,
-            date_no: dayNo,
-            total_time: userPlan.total_time,
-            is_complete: false,
-          },
-        });
-      }
-      //  关联UserPlanDayTrack记录与userTaskScheduler
-      
-
 
       return true;
       // return { userPlan, userTaskGroups, userTasks };
