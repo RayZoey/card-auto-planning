@@ -6,7 +6,9 @@ import {ConfigService} from '@nestjs/config';
 const Duplex = require('stream').Duplex;
 const _ = require('lodash');
 const moment = require('moment');
-const ObsClient = require("esdk-obs-nodejs");
+const OSS = require('ali-oss');
+import * as iconv from 'iconv-lite';
+import { createReadStream, createWriteStream } from 'fs';
 
 @Injectable()
 export class BaseService {
@@ -78,35 +80,70 @@ export class BaseService {
   }
 
   //  上传文件至OSS
-  async uploadOSS(@UploadedFiles() files: any) {
-    const filesList = [];
-
-    // 创建ObsClient实例
-    const obsClient = new ObsClient({
-      access_key_id: this.configService.get('OBS_ACCESS_ID'),
-      secret_access_key: this.configService.get('OBS_ACCESS_KEY'),
-      server: this.configService.get('OBS_ENDPOINT')
+  async uploadOSS(@UploadedFiles() files: any, @Body('directory') directory: string, needConfound: boolean, needUnzip: boolean = false) {
+    const client = new OSS({
+      endpoint: this.configService.get('ENDPOINT'), // endpoint域名
+      accessKeyId: this.configService.get('ACCESSKEYID'), // 账号
+      accessKeySecret: this.configService.get('ACCESSKEYSECRET'), // 密码
+      bucket: this.configService.get('BUCKET'), // 存储桶
+      region: this.configService.get('REGION'),
     });
-
+    let result = {
+      err: 0,
+      success: 0,
+      success_link: [],
+      success_unzip_target_link: [],
+      success_link_kv: [],
+    };
     for (const index in files) {
-
-      const stream = await this.bufferToStream(files[index].buffer);
-      const fileName = random(0, 999) + '-' + random(0, 999) + '-' + files[index]['originalname'];
-      const path = '/hsdr/' + moment().format('YYYY-MM') + '/' + fileName;
-      const params = {
-        Bucket: "test-glzt",
-        Key: path,
-        Body: stream  //  华为云不支持直接上传buffer
-      };
-      const result = await obsClient.putObject(params);
-      if (result.CommonMsg.Status <= 300) {
-        filesList.push(path);
+      let res, fileName;
+      //  需要混淆文件名
+      if (needConfound) {
+        fileName = random(0, 999) + '-' + random(0, 999) + '-' + files[index]['originalname'];
+      } else {
+        fileName = files[index]['originalname'];
+      }
+      // fileName = await this.encodeURI(fileName);
+      //  如果需要解压缩就不能指定目录
+      if (needUnzip && directory) {
+        throw new Error('如果需要解压缩则不能指定目录');
+      }
+      //  如果需要解压缩则需要固定目录
+      if (directory == undefined) {
+        res = await client.put('auto-plan' + '/' + fileName, files[index]['buffer']);
       }else {
-        throw new Error('文件上传服务错误');
+        res = await client.put('auto-plan' + '/' + directory + '/' + fileName, files[index]['buffer']);
+      }
+      if (res['res'] || res['res']['status'] == 200) {
+        const successLink = res['url'].replace('http://', 'https://');
+        result['success'] += 1;
+        result['success_link'].push(successLink);
+      } else {
+        result['err'] += 1;
       }
     }
-      return filesList
+    return result;
+  }
+  
+  // 去除zip后缀的函数
+  async removeZipSuffix(url) {
+      const zipSuffixIndex = url.lastIndexOf('.zip');
+      if (zipSuffixIndex !== -1) {
+          return url.slice(0, zipSuffixIndex);
+      }
+      return url;
+  }
 
+
+  async getOssFile(fileName) {
+    const client = new OSS({
+      endpoint: this.configService.get('ENDPOINT'), // endpoint域名
+      accessKeyId: this.configService.get('ACCESSKEYID'), // 账号
+      accessKeySecret: this.configService.get('ACCESSKEYSECRET'), // 密码
+      bucket: this.configService.get('BUCKET'), // 存储桶
+      region: this.configService.get('REGION'),
+    });
+    return client.get(fileName);
   }
 
   //  判断正整数
