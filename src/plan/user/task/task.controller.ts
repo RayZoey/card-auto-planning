@@ -2,7 +2,7 @@
  * @Author: Ray lighthouseinmind@yeah.net
  * @Date: 2025-07-08 14:59:59
  * @LastEditors: Reflection lighthouseinmind@yeah.net
- * @LastEditTime: 2025-12-17 22:56:27
+ * @LastEditTime: 2025-12-17 23:22:04
  * @FilePath: /card-auto-planning/src/plan/platform/plan-template/plan-template.controller.ts
  * @Description: 这是默认设置,请设置`customMade`, 打开koroFileHeader查看配置 进行设置: https://github.com/OBKoro1/koro1FileHeader/wiki/%E9%85%8D%E7%BD%AE
  */
@@ -27,28 +27,6 @@ import { TaskStatus } from '@prisma/client';
 export class UserTaskController {
   constructor(private readonly service: UserTaskService, private offsetCalculator: OffsetCalculator) {}
 
-  @Get(':id')
-  @UseGuards(JwtAuthGuard, RoleGuard('miniUser'))
-  async findById(@Req() req, @Param('id') id: number) {
-    const res = await this.service.findById(id);
-    return {                                     
-      code: HttpStatus.OK,
-      data: res,
-      res: '成功',
-    };  
-  }
-  
-  @Post()
-  @UseGuards(JwtAuthGuard, RoleGuard('miniUser'))
-  async create(@Req() req, @Body() createDto: UserTaskCreateDto, @Body('need_auto_plan') needAutoPlan: boolean, @Body('need_auto_fill') needAutoFill: boolean) {
-    const userId = req.user.accountId;
-    const res = await this.service.create(userId, createDto, needAutoPlan, needAutoFill);
-    return {                                     
-      code: HttpStatus.CREATED,
-      data: res,
-      res: '成功',
-    }; 
-  }
 
   //  心跳接口
   @Put('heartbeat/:id')
@@ -75,18 +53,6 @@ export class UserTaskController {
     }; 
   }
 
-  @Put(':id')
-  @UseGuards(JwtAuthGuard, RoleGuard('miniUser'))
-  async update(@Req() req, @Param('id') id: number, @Body() updateDto: UserTaskUpdateDto) {
-    const userId = req.user.accountId;
-    const res = await this.service.update(id, updateDto, userId);
-    return {                                     
-      code: HttpStatus.OK,
-      data: res,
-      res: '成功',
-    }; 
-  }
-
   //  编辑用户任务基础信息
   @Put('base-info/:id')
   @UseGuards(JwtAuthGuard, RoleGuard('miniUser'))
@@ -100,17 +66,6 @@ export class UserTaskController {
     };
   }
 
-  @Delete(':id')
-  @UseGuards(JwtAuthGuard, RoleGuard('miniUser'))
-  async delete(@Req() req, @Param('id') id: number, @Body('need_auto_plan') needAutoPlan: boolean, @Body('need_auto_fill') needAutoFill: boolean) {
-    const userId = req.user.accountId;
-    const res = await this.service.delete(userId, id, needAutoPlan, needAutoFill);
-    return {                                     
-      code: HttpStatus.OK,
-      data: res,
-      res: '成功',
-    }; 
-  }
 
   //  用户拆分任务为两段
   @Post('split/:id')
@@ -198,5 +153,65 @@ export class UserTaskController {
       data: res,
       res: '成功',
     };
+  }
+
+  //  编辑用户任务集名称
+  @Put('group/:id')
+  @UseGuards(JwtAuthGuard, RoleGuard('miniUser'))
+  async updateTaskGroup(@Req() req, @Param('id') id: number, @Body('name') name: string) {
+    const userId = req.user.accountId;
+    const res = await this.service.updateTaskGroup(Number(id), name, userId);
+    return {
+      code: HttpStatus.OK,
+      data: res,
+      res: '成功',
+    };
+  }
+
+  @Get(':id')
+  @UseGuards(JwtAuthGuard, RoleGuard('miniUser'))
+  async findById(@Req() req, @Param('id') id: number) {
+    const res = await this.service.findById(id);
+    return {                                     
+      code: HttpStatus.OK,
+      data: res,
+      res: '成功',
+    };  
+  }
+  
+  @Post()
+  @UseGuards(JwtAuthGuard, RoleGuard('miniUser'))
+  async create(@Req() req, @Body() createDto: UserTaskCreateDto, @Body('need_auto_plan') needAutoPlan: boolean, @Body('need_auto_fill') needAutoFill: boolean) {
+    const userId = req.user.accountId;
+    const res = await this.service.create(userId, createDto, needAutoPlan, needAutoFill);
+    return {                                     
+      code: HttpStatus.CREATED,
+      data: res,
+      res: '成功',
+    }; 
+  }
+
+
+  @Put(':id')
+  @UseGuards(JwtAuthGuard, RoleGuard('miniUser'))
+  async update(@Req() req, @Param('id') id: number, @Body() updateDto: UserTaskUpdateDto) {
+    const userId = req.user.accountId;
+    const res = await this.service.update(id, updateDto, userId);
+    return {                                     
+      code: HttpStatus.OK,
+      data: res,
+      res: '成功',
+    }; 
+  }
+  @Delete(':id')
+  @UseGuards(JwtAuthGuard, RoleGuard('miniUser'))
+  async delete(@Req() req, @Param('id') id: number, @Body('need_auto_plan') needAutoPlan: boolean, @Body('need_auto_fill') needAutoFill: boolean) {
+    const userId = req.user.accountId;
+    const res = await this.service.delete(userId, id, needAutoPlan, needAutoFill);
+    return {                                     
+      code: HttpStatus.OK,
+      data: res,
+      res: '成功',
+    }; 
   }
 }
