@@ -2,7 +2,7 @@
  * @Author: Ray lighthouseinmind@yeah.net
  * @Date: 2025-07-08 14:59:59
  * @LastEditors: Reflection lighthouseinmind@yeah.net
- * @LastEditTime: 2025-12-16 20:49:11
+ * @LastEditTime: 2025-12-17 22:56:27
  * @FilePath: /card-auto-planning/src/plan/platform/plan-template/plan-template.controller.ts
  * @Description: 这是默认设置,请设置`customMade`, 打开koroFileHeader查看配置 进行设置: https://github.com/OBKoro1/koro1FileHeader/wiki/%E9%85%8D%E7%BD%AE
  */
@@ -19,6 +19,7 @@ import { UserTaskQuery } from './task.query';
 import { UserTaskCreateDto } from './task.create.dto';
 import { UserTaskUpdateDto } from './task.update.dto';
 import { MarkDayCompleteDto, AdvanceNextDayTasksDto, ProcessDayTasksDto } from './task.day-complete.dto';
+import { UserTaskSplitDto } from './task.split.dto';
 import { TaskStatus } from '@prisma/client';
 
 @Controller('user-task')
@@ -95,6 +96,30 @@ export class UserTaskController {
       data: res,
       res: '成功',
     }; 
+  }
+
+  //  用户拆分任务为两段
+  @Post('split/:id')
+  @UseGuards(JwtAuthGuard, RoleGuard('miniUser'))
+  async splitTask(@Req() req, @Param('id') id: number, @Body() dto: UserTaskSplitDto) {
+    const userId = req.user.accountId;
+    const res = await this.service.splitTask(
+      userId,
+      Number(id),
+      {
+        name: dto.first_name,
+        minutes: dto.first_minutes,
+      },
+      {
+        name: dto.second_name,
+        minutes: dto.second_minutes,
+      },
+    );
+    return {
+      code: HttpStatus.OK,
+      data: res,
+      res: '成功',
+    };
   }
 
   //  标记今日所有任务已完成（完成打卡）

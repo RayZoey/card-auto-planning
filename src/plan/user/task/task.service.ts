@@ -636,6 +636,135 @@ export class UserTaskService {
     });
   }
 
+  /**
+   * 用户手动把一个任务拆分成两个任务
+   * - 传入 taskId、第一段信息（名称+分钟）、第二段信息（名称+分钟）
+   * - 原任务变成第一段，新建一个任务作为第二段
+   * - 当日剩余任务顺序往后顺延
+   * - 所属计划内后续任务的 global_sort 顺延
+   * - 如果是任务集任务，则后续任务的 group_sort 也顺延
+   */
+  async splitTask(
+    userId: number,
+    taskId: number,
+    first: { name: string; minutes: number },
+    second: { name: string; minutes: number },
+  ) {
+    if (first.minutes <= 0 || second.minutes <= 0) {
+      throw new HttpException('拆分后的任务时长必须大于 0 分钟', HttpStatus.BAD_REQUEST);
+    }
+
+    return this.prismaService.$transaction(async (tx) => {
+      // 1. 读取任务及调度信息
+      const scheduler = await tx.userTaskScheduler.findUnique({
+        where: { task_id: taskId },
+        include: { task: true },
+      });
+
+      if (!scheduler || !scheduler.task) {
+        throw new HttpException('任务不存在', HttpStatus.BAD_REQUEST);
+      }
+      if (scheduler.task.user_id !== userId) {
+        throw new HttpException('无权操作该任务', HttpStatus.FORBIDDEN);
+      }
+
+      const task = scheduler.task;
+
+      // 校验拆分时长总和是否与原任务一致，避免计划统计混乱
+      if (first.minutes + second.minutes !== task.occupation_time) {
+        throw new HttpException(
+          `两段时长之和必须等于原任务时长（${task.occupation_time} 分钟）`,
+          HttpStatus.BAD_REQUEST,
+        );
+      }
+
+      // 2. 更新原任务为第一段
+      await tx.userTask.update({
+        where: { id: task.id },
+        data: {
+          name: first.name,
+          occupation_time: first.minutes,
+        },
+      });
+
+      // 3. 为第二段创建一个新的任务，除名称和时长外其他信息保持一致
+      const newTask = await tx.userTask.create({
+        data: {
+          plan_id: task.plan_id,
+          user_id: task.user_id,
+          task_group_id: task.task_group_id,
+          name: second.name,
+          preset_task_tag_id: task.preset_task_tag_id,
+          background: task.background,
+          suggested_time_start: task.suggested_time_start,
+          suggested_time_end: task.suggested_time_end,
+          remark: task.remark,
+          annex_type: task.annex_type,
+          annex: task.annex,
+          timing_type: task.timing_type,
+          occupation_time: second.minutes,
+          status: task.status,
+          can_divisible: task.can_divisible,
+        },
+      });
+
+      // 4. 顺延当日 / 计划 / 任务集内后续任务的排序
+      // 当天 within same date_no：day_sort > 当前任务的全部 +1
+      await tx.userTaskScheduler.updateMany({
+        where: {
+          plan_id: scheduler.plan_id,
+          date_no: scheduler.date_no,
+          day_sort: { gt: scheduler.day_sort },
+        },
+        data: {
+          day_sort: { increment: 1 },
+        },
+      });
+
+      // 计划全局顺序：global_sort > 当前任务的全部 +1
+      await tx.userTaskScheduler.updateMany({
+        where: {
+          plan_id: scheduler.plan_id,
+          global_sort: { gt: scheduler.global_sort },
+        },
+        data: {
+          global_sort: { increment: 1 },
+        },
+      });
+
+      // 任务集顺序：如果有 group_sort，则将更大的 group_sort 顺延
+      if (scheduler.group_sort !== null) {
+        await tx.userTaskScheduler.updateMany({
+          where: {
+            plan_id: scheduler.plan_id,
+            group_sort: { gt: scheduler.group_sort },
+          },
+          data: {
+            group_sort: { increment: 1 },
+          },
+        });
+      }
+
+      // 5. 创建第二段对应的调度记录，插在原任务之后
+      const newSchedulerData: any = {
+        plan_id: scheduler.plan_id,
+        task_id: newTask.id,
+        track_id: scheduler.track_id,
+        priority: scheduler.priority,
+        global_sort: scheduler.global_sort + 1,
+        group_sort: scheduler.group_sort !== null ? scheduler.group_sort + 1 : null,
+        day_sort: scheduler.day_sort + 1,
+        can_divisible: scheduler.can_divisible,
+        date_no: scheduler.date_no,
+        status: scheduler.status,
+      };
+
+      await tx.userTaskScheduler.create({ data: newSchedulerData });
+
+      return { ok: true };
+    });
+  }
+
   async update(id: number, dto: UserTaskUpdateDto, userId: number) {
     const task = await this.prismaService.userTask.findFirst({
       where: {
