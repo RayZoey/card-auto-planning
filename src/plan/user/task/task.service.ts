@@ -11,9 +11,10 @@ import {PrismaService} from '@src/common/prisma.service';
 import {BaseService} from '@src/base/base.service';
 import {QueryFilter} from '@src/common/query-filter';
 import {QueryConditionParser} from '@src/common/query-condition-parser';
-import { PlanStatus, TaskStatus, TaskTimingType } from '@prisma/client';
+import { PlanStatus, TaskAnnexType, TaskStatus, TaskTimingType } from '@prisma/client';
 import { UserTaskCreateDto } from './task.create.dto';
 import { UserTaskUpdateDto } from './task.update.dto';
+import { UserTaskBaseUpdateDto } from './task.base-update.dto';
 const moment = require('moment');
 
 @Injectable()
@@ -779,6 +780,49 @@ export class UserTaskService {
       where: {
         id: id,
       },
+    });
+  }
+
+  //  编辑用户任务基础信息（不涉及排序）
+  async updateBaseInfo(id: number, dto: UserTaskBaseUpdateDto, userId: number) {
+    const scheduler = await this.prismaService.userTaskScheduler.findUnique({
+      where: { task_id: id },
+      include: { task: true },
+    });
+    if (!scheduler || !scheduler.task) {
+      throw new Error('任务不存在');
+    }
+    if (scheduler.task.user_id !== userId) {
+      throw new Error('未找到该任务信息/该任务不属于当前请求用户');
+    }
+
+    return this.prismaService.$transaction(async (tx) => {
+      // 更新任务基础信息
+      await tx.userTask.update({
+        where: { id },
+        data: {
+          name: dto.name,
+          background: dto.background,
+          occupation_time: dto.occupation_time,
+          suggested_time_start: dto.suggested_time_start,
+          suggested_time_end: dto.suggested_time_end,
+          remark: dto.remark,
+          annex_type: dto.annex_type as TaskAnnexType,
+          annex: dto.annex,
+          preset_task_tag_id: dto.preset_task_tag_id,
+          timing_type: dto.timing_type,
+        },
+      });
+
+      // 更新调度优先级
+      await tx.userTaskScheduler.update({
+        where: { task_id: id },
+        data: {
+          priority: dto.priority,
+        },
+      });
+
+      return { ok: true };
     });
   }
 

@@ -18,6 +18,7 @@ import { UserTaskQueryCondition } from './task.query-condition';
 import { UserTaskQuery } from './task.query';
 import { UserTaskCreateDto } from './task.create.dto';
 import { UserTaskUpdateDto } from './task.update.dto';
+import { UserTaskBaseUpdateDto } from './task.base-update.dto';
 import { MarkDayCompleteDto, AdvanceNextDayTasksDto, ProcessDayTasksDto } from './task.day-complete.dto';
 import { UserTaskSplitDto } from './task.split.dto';
 import { TaskStatus } from '@prisma/client';
@@ -84,6 +85,19 @@ export class UserTaskController {
       data: res,
       res: '成功',
     }; 
+  }
+
+  //  编辑用户任务基础信息
+  @Put('base-info/:id')
+  @UseGuards(JwtAuthGuard, RoleGuard('miniUser'))
+  async updateBaseInfo(@Req() req, @Param('id') id: number, @Body() dto: UserTaskBaseUpdateDto) {
+    const userId = req.user.accountId;
+    const res = await this.service.updateBaseInfo(Number(id), dto, userId);
+    return {
+      code: HttpStatus.OK,
+      data: res,
+      res: '成功',
+    };
   }
 
   @Delete(':id')
