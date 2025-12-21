@@ -2,7 +2,7 @@
  * @Author: Ray lighthouseinmind@yeah.net
  * @Date: 2025-07-08 14:59:59
  * @LastEditors: Reflection lighthouseinmind@yeah.net
- * @LastEditTime: 2025-12-17 23:17:26
+ * @LastEditTime: 2025-12-17 23:24:57
  * @FilePath: /card-backend/src/card/pdf-print-info/pdf-print-info.service.ts
  * @Description: 这是默认设置,请设置`customMade`, 打开koroFileHeader查看配置 进行设置: https://github.com/OBKoro1/koro1FileHeader/wiki/%E9%85%8D%E7%BD%AE
  */
@@ -539,7 +539,7 @@ export class UserTaskService {
     const now = moment();
     const lastHb = task.last_heartbeat_at ? moment(task.last_heartbeat_at) : null;
 
-    // 异常退出标识：PAUSE 且 ≥ 120 s 无心跳
+    // 异常退出标识：PAUSE 且 ≥ 90 s 无心跳（true表示任务可能异常退出而非正常暂停）
     task['last_off_line'] = (task.status === TaskStatus.PAUSE && lastHb !== null && now.diff(lastHb, 'seconds') >= 90);
     return task;
   }
