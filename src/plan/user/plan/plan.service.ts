@@ -2,7 +2,7 @@
  * @Author: Ray lighthouseinmind@yeah.net
  * @Date: 2025-07-08 14:59:59
  * @LastEditors: Reflection lighthouseinmind@yeah.net
- * @LastEditTime: 2025-12-16 21:55:37
+ * @LastEditTime: 2025-12-24 00:21:05
  * @FilePath: /card-backend/src/card/pdf-print-info/pdf-print-info.service.ts
  * @Description: 这是默认设置,请设置`customMade`, 打开koroFileHeader查看配置 进行设置: https://github.com/OBKoro1/koro1FileHeader/wiki/%E9%85%8D%E7%BD%AE
  */
@@ -126,7 +126,7 @@ export class UserPlanService {
   }
 
   //  通过平台模版生成用户个人计划
-  async generateByTemplate(userId, templateId){
+  async generateByTemplate(userId, templateId, planName){
     // 1. 查询平台任务模版及其所有详情
     const template = await this.prismaService.planTemplate.findFirst({
       where: { id: templateId },
@@ -150,7 +150,7 @@ export class UserPlanService {
       const userPlan = await prisma.userPlan.create({
         data: {
           user_id: userId,
-          name: template.name,
+          name: planName,
           status: PlanStatus.PROGRESS, // 可按需要自定义默认状态
           total_days: template.total_days,
           planned_start_time: now,
