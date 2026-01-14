@@ -2,7 +2,7 @@
  * @Author: Ray lighthouseinmind@yeah.net
  * @Date: 2025-07-08 14:59:59
  * @LastEditors: Reflection lighthouseinmind@yeah.net
- * @LastEditTime: 2025-12-24 00:32:38
+ * @LastEditTime: 2026-01-14 23:05:56
  * @FilePath: /card-backend/src/card/pdf-print-info/pdf-print-info.service.ts
  * @Description: 这是默认设置,请设置`customMade`, 打开koroFileHeader查看配置 进行设置: https://github.com/OBKoro1/koro1FileHeader/wiki/%E9%85%8D%E7%BD%AE
  */
@@ -1862,13 +1862,13 @@ export class UserTaskService {
   }
 
   //  获取计划的每日进度信息
-  async getPlanDayProgress(userId: number, planId: number) {
+  async getPlanDayProgress(userId: number, planId: number, needTask: boolean) {
     // 验证计划属于该用户
     const plan = await this.prismaService.userPlan.findFirst({
       where: {
         id: planId,
         user_id: userId,
-      },
+      }
     });
     if (!plan) {
       throw new Error('计划不存在或不属于当前用户');
@@ -1878,6 +1878,27 @@ export class UserTaskService {
     const dayTracks = await this.prismaService.userPlanDayTrack.findMany({
       where: {
         plan_id: planId,
+      },
+      select: {
+        date_no: true,
+        is_complete: true,
+        completed_at: true,
+        total_time: true,
+        UserTaskScheduler: {
+          select: {
+            track_id: true,
+            day_sort: true,
+            date_no: true,
+            priority: true,
+            task: {
+              select: {
+                id: true,
+                name: true,
+                background: true
+              }
+            }
+          }
+        }
       },
       orderBy: {
         date_no: 'desc',
@@ -1903,6 +1924,7 @@ export class UserTaskService {
         is_complete: track?.is_complete || false,
         completed_at: track?.completed_at || null,
         total_time: track?.total_time || null,
+        taskList: needTask ? track?.UserTaskScheduler : [],
         // is_today: dayNo === currentDayNo,
       });
     }
