@@ -44,8 +44,51 @@ export class UserTaskService {
     });
   }
 
+  //  获取今日学习统计
+  async getTodayLearningStatistics(userId: number, planId: number, dateNo: number) {
+    //  检查dateNo之前是否有未关闭的date
+    const previousDayTracks = await this.prismaService.userPlanDayTrack.findMany({
+      where: {
+        plan_id: planId,
+        date_no: { lt: dateNo },
+        is_complete: false,
+      },
+    });
+    if (previousDayTracks.length > 0) {
+      throw new HttpException('第' + dateNo + '天之前有未关闭的日期，无法获取学习统计', HttpStatus.BAD_REQUEST);
+    }
+    //  检查dateNo是否存在
+    const existingTrack = await this.prismaService.userPlanDayTrack.findFirst({
+      where: {
+        plan_id: planId,
+        date_no: dateNo,
+      },
+    });
+    if (!existingTrack) {
+      throw new HttpException('第' + dateNo + '天不存在，无法获取学习统计', HttpStatus.BAD_REQUEST);
+    }
+    //  获取今日每个任务的耗时对比（计划耗时与实际耗时）
+    const todayTasks = await this.prismaService.userTaskScheduler.findMany({
+      where: {
+        plan_id: planId,
+        date_no: dateNo,
+      },
+      include: {
+        task: true,
+      },
+    });
+    const todayTasksTimeDifference = todayTasks.map(item => {
+      return {
+        task_id: item.task_id,
+        task_name: item.task.name,
+        task_time_difference: item.task.occupation_time - item.task.actual_time,
+      };
+    });
+    return todayTasksTimeDifference;
+  }
+
   //  标记今日所有任务已完成（完成打卡）
-  async markDayComplete(userId: number, planId: number, dateNo: number) {
+  async markDayComplete(userId: number, planId: number, dateNo: number, learningExperience: string, annex: string | null) {
     //  检查dateNo之前是否有未关闭的date
     const previousDayTracks = await this.prismaService.userPlanDayTrack.findMany({
       where: {
@@ -123,6 +166,8 @@ export class UserTaskService {
           data: {
             is_complete: true,
             completed_at: now,
+            learning_experience: learningExperience,
+            annex: annex,
           },
         });
       } else {
@@ -135,6 +180,8 @@ export class UserTaskService {
             is_complete: true,
             completed_at: now,
             total_time: totalTime,
+            learning_experience: learningExperience,
+            annex: annex,
           },
         });
       }

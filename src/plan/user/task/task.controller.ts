@@ -92,12 +92,25 @@ export class UserTaskController {
     };
   }
 
+  //  获取今日学习统计
+  @Get('today-learning-statistics/:planId')
+  @UseGuards(JwtAuthGuard, RoleGuard('miniUser'))
+  async getTodayLearningStatistics(@Req() req, @Param('planId') planId: number, @Query('date_no') dateNo: number) {
+    const userId = req.user.accountId;
+    const res = await this.service.getTodayLearningStatistics(userId, planId, dateNo);
+    return {
+      code: HttpStatus.OK,
+      data: res,
+      res: '成功',
+    };
+  }
+
   //  标记今日所有任务已完成（完成打卡）
   @Post('mark-day-complete')
   @UseGuards(JwtAuthGuard, RoleGuard('miniUser'))
-  async markDayComplete(@Req() req, @Body() dto: MarkDayCompleteDto) {
+  async markDayComplete(@Req() req, @Body() dto: MarkDayCompleteDto, @Body('learning_experience') learningExperience: string | null, @Body('annex') annex: string | null) {
     const userId = req.user.accountId;
-    const res = await this.service.markDayComplete(userId, dto.plan_id, dto.date_no);
+    const res = await this.service.markDayComplete(userId, dto.plan_id, dto.date_no, learningExperience, annex);
     return {
       code: HttpStatus.OK,
       data: res,
