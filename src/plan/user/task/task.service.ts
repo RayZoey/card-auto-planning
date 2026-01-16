@@ -67,24 +67,31 @@ export class UserTaskService {
     if (!existingTrack) {
       throw new HttpException('第' + dateNo + '天不存在，无法获取学习统计', HttpStatus.BAD_REQUEST);
     }
-    //  获取今日每个任务的耗时对比（计划耗时与实际耗时）
+    //  获取今日每个任务的计划耗时与实际耗时以及所属任务集信息
     const todayTasks = await this.prismaService.userTaskScheduler.findMany({
       where: {
         plan_id: planId,
         date_no: dateNo,
       },
-      include: {
-        task: true,
-      },
+      select: {
+        task_id: true,
+        task: {
+          select: {
+            name: true,
+            occupation_time: true,
+            actual_time: true,
+            task_group_id: true,
+            group: {
+              select: {
+                id: true,
+                name: true,
+              },
+            },
+          },
+        },
+      }
     });
-    const todayTasksTimeDifference = todayTasks.map(item => {
-      return {
-        task_id: item.task_id,
-        task_name: item.task.name,
-        task_time_difference: item.task.occupation_time - item.task.actual_time,
-      };
-    });
-    return todayTasksTimeDifference;
+    return todayTasks;
   }
 
   //  标记今日所有任务已完成（完成打卡）
