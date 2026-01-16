@@ -68,7 +68,7 @@ export class UserTaskController {
   }
 
 
-  //  用户拆分任务为两段
+  //  分割任务-用户拆分任务为两段
   @Post('split/:id')
   @UseGuards(JwtAuthGuard, RoleGuard('miniUser'))
   async splitTask(@Req() req, @Param('id') id: number, @Body() dto: UserTaskSplitDto) {
@@ -92,7 +92,21 @@ export class UserTaskController {
     };
   }
 
-  //  获取今日学习统计
+  //  学习总览（主页统计）
+  @Get('overview/:planId')
+  @UseGuards(JwtAuthGuard, RoleGuard('miniUser'))
+  async overview(@Req() req, @Param('planId') planId: number, @Query('start_date') startDate: Date, @Query('end_date') endDate: Date) {
+    const userId = req.user.accountId;
+    const res = await this.service.overview(userId, planId, startDate, endDate);
+    return {
+      code: HttpStatus.OK,
+      data: res,
+      res: '成功',
+    };
+  }
+
+
+  //  获取今日学习统计（打卡页面）
   @Get('today-learning-statistics/:planId')
   @UseGuards(JwtAuthGuard, RoleGuard('miniUser'))
   async getTodayLearningStatistics(@Req() req, @Param('planId') planId: number, @Query('date_no') dateNo: number) {

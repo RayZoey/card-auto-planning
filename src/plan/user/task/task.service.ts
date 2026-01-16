@@ -43,6 +43,187 @@ export class UserTaskService {
       },
     });
   }
+  
+  //  获取学习总览
+  async overview(userId: number, planId: number, startDate: Date, endDate: Date){
+    let res = {
+      total_clock_in_days: 0,
+      total_learning_time: 0,
+      process_num: 0,
+      current_month_clock_in_days: 0,
+      time_comparison: {
+        free_timing: {
+          actual_time: 0,
+          occupation_time: 0,
+        },
+        normal_timing: {
+          actual_time: 0,
+          occupation_time: 0,
+        },
+        group_timing: {
+          actual_time: 0,
+          occupation_time: 0,
+        },
+      },
+      group_task_comparison: [
+        {
+          group_name: null,
+          actual_time: 0,
+          occupation_time: 0,
+        }
+      ],
+    };
+
+    //  获取总打卡天数
+    res.total_clock_in_days = await this.prismaService.userPlanDayTrack.count({
+      where: {
+        plan_id: planId,
+        is_complete: true,
+      },
+    });
+
+    //  获取该计划的学习总时长
+    const totalLearningTime = await this.prismaService.userTask.aggregate({
+      where: {
+        plan_id: planId,
+        actual_time: { not: null },
+        status: { not: TaskStatus.SKIP },
+      },
+      _sum: {
+        actual_time: true,
+      },
+    });
+
+    //  学习进度【学习总时长+剩余所有任务的标准占用时间】
+    const totalProcessTime = await this.prismaService.userTask.aggregate({
+      where: {
+        plan_id: planId,
+        status: 'WAITING'
+      },
+      _sum: {
+        occupation_time: true,
+      },
+    })
+
+    const processNum = (totalLearningTime._sum.actual_time / (totalProcessTime._sum.occupation_time + totalLearningTime._sum.actual_time));
+
+    res.total_learning_time = totalLearningTime._sum.actual_time;
+    res.process_num = processNum;
+
+    //  获取当月打卡天数
+    res.current_month_clock_in_days = await this.prismaService.userPlanDayTrack.count({
+      where: {
+        plan_id: planId,
+        is_complete: true,
+        completed_at: { gte: startDate, lte: endDate },
+      },
+    });
+
+    //  获取时间范围内每天的专注时间（每天实际学习总时间）
+    const dailyTotalTime = await this.prismaService.userPlanDayTrack.findMany({
+      where: {
+        plan_id: planId,
+        completed_at: { gte: startDate, lte: endDate },
+      },
+      select: {
+        date_no: true,
+        total_time: true,
+        completed_at: true,
+      },
+    });
+    //  获取所有非任务集且非自由计时任务的时间总和
+    const normalTime = await this.prismaService.userTask.aggregate({
+      where: {
+        plan_id: planId,
+        task_group_id: null,
+        status: 'COMPLETE',
+        timing_type: { not: TaskTimingType.FREE_TIMING },
+        actual_time_end: { gte: startDate, lte: endDate }
+      },
+      _sum: {
+        occupation_time: true,
+        actual_time: true,
+      },});
+
+    //  获取所有非自由计时任务的时间总和
+    const freeTimingTasksTime = await this.prismaService.userTask.aggregate({
+      where: {
+        plan_id: planId,
+        status: 'COMPLETE',
+        timing_type: TaskTimingType.FREE_TIMING,
+        actual_time_end: { gte: startDate, lte: endDate }
+      },
+      _sum: {
+        occupation_time: true,
+        actual_time: true,
+      },});
+
+    // 获取所有任务集任务的时间总和
+    const groupTimingTasksTime = await this.prismaService.userTask.aggregate({
+      where: {
+        plan_id: planId,
+        task_group_id: { not: null },
+        status: 'COMPLETE',
+        timing_type: { not: TaskTimingType.FREE_TIMING },
+        actual_time_end: { gte: startDate, lte: endDate }
+      },
+      _sum: {
+        occupation_time: true,
+        actual_time: true,
+      },});
+
+      res.time_comparison.normal_timing = normalTime._sum;
+      res.time_comparison.free_timing = freeTimingTasksTime._sum;
+      res.time_comparison.group_timing = groupTimingTasksTime._sum;
+
+      //  获取时间段内所有任务集任务并根据任务集聚合后计算每个任务集的占用时间和实际时间并将列表放入res.group_task_comparison中
+      const taskGroupTasks = await this.prismaService.userTask.findMany({
+        where: {
+          plan_id: planId,
+          task_group_id: { not: null },
+          status: TaskStatus.COMPLETE,
+          actual_time_end: { gte: startDate, lte: endDate }
+        },
+        select: {
+          task_group_id: true,
+          occupation_time: true,
+          actual_time: true,
+          group: {
+            select: {
+              id: true,
+              name: true,
+            }
+          }
+        }
+      });
+
+      // 按任务集分组并计算占用时间和实际时间总和
+      const taskGroupTimeMap = new Map<number, { group_name: string; actual_time: number; occupation_time: number }>();
+      
+      for (const task of taskGroupTasks) {
+        if (task.task_group_id) {
+          const groupId = task.task_group_id;
+          const existing = taskGroupTimeMap.get(groupId);
+          
+          if (existing) {
+            existing.occupation_time += task.occupation_time || 0;
+            existing.actual_time += task.actual_time || 0;
+          } else {
+            taskGroupTimeMap.set(groupId, {
+              group_name: task.group?.name || '',
+              occupation_time: task.occupation_time || 0,
+              actual_time: task.actual_time || 0
+            });
+          }
+        }
+      }
+
+      // 转换为数组并按实际时间降序排序
+      res.group_task_comparison = Array.from(taskGroupTimeMap.values())
+        .sort((a, b) => b.actual_time - a.actual_time);
+
+    return res;
+  }
 
   //  获取今日学习统计
   async getTodayLearningStatistics(userId: number, planId: number, dateNo: number) {
