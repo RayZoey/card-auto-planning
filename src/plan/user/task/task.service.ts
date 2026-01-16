@@ -51,6 +51,7 @@ export class UserTaskService {
       total_learning_time: 0,
       process_num: 0,
       current_month_clock_in_days: 0,
+      daily_time_list:[],
       time_comparison: {
         free_timing: {
           actual_time: 0,
@@ -120,7 +121,7 @@ export class UserTaskService {
     });
 
     //  获取时间范围内每天的专注时间（每天实际学习总时间）
-    const dailyTotalTime = await this.prismaService.userPlanDayTrack.findMany({
+    const dailyTimeList = await this.prismaService.userPlanDayTrack.findMany({
       where: {
         plan_id: planId,
         completed_at: { gte: startDate, lte: endDate },
@@ -131,6 +132,8 @@ export class UserTaskService {
         completed_at: true,
       },
     });
+    res.daily_time_list = dailyTimeList;
+
     //  获取所有非任务集且非自由计时任务的时间总和
     const normalTime = await this.prismaService.userTask.aggregate({
       where: {
