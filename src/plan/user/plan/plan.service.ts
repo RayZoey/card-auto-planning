@@ -26,6 +26,37 @@ export class UserPlanService {
     private readonly autoPlanningService: AutoPlanningService
   ) {}
 
+  //  获取下一个计划日可提前任务列表
+  async getNextAdvanceTaskList(accountId: number, planId: number, currentDateNo: number){
+    return await this.prismaService.userPlanDayTrack.findFirst({
+      where: {
+        plan_id: planId,
+        is_complete: false,
+        date_no: currentDateNo + 1,
+      },
+      select: {
+        id: true,
+        date_no: true,
+        UserTaskScheduler: {
+          select: {
+            date_no: true,
+            day_sort: true,
+            priority: true,
+            status: true,
+            task: {
+              select: {
+                name: true,
+                task_group_id: true,
+                background: true,
+                timing_type: true
+              }
+            }
+          }
+        }
+      }
+    });
+  }
+
   //  获取用户计划中最新一天没有完成的任务列表
   async getLatestUncompletedTasks(userId: number, planId: number) {
     return await this.prismaService.userPlanDayTrack.findMany({

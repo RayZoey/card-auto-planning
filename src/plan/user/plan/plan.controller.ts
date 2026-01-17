@@ -23,10 +23,22 @@ import { UserPlanUpdateDto } from './plan.update.dto';
 export class UserPlanController {
   constructor(private readonly service: UserPlanService, private offsetCalculator: OffsetCalculator) {}
 
+  //  获取下一个计划日可提前任务列表
+  @Get('/tasks/next-advance/list/:planId')
+  @UseGuards(JwtAuthGuard, RoleGuard('miniUser'))
+  async getNextAdvanceTaskList(@Req() req, @Param('planId') planId: number, @Query('current_date_no') currentDateNo: number) {
+    const res = await this.service.getNextAdvanceTaskList(req.user.accountId, planId, currentDateNo);
+    return {                                     
+      code: HttpStatus.OK,
+      data: res,
+      res: '成功',
+    }; 
+  }
+
+
   @Get('/tasks/latest-uncompleted/:planId')
   @UseGuards(JwtAuthGuard, RoleGuard('miniUser'))
   async getLatestUncompletedTasks(@Req() req, @Param('planId') planId: number) {
-    console.log(planId);
     const res = await this.service.getLatestUncompletedTasks(req.user.accountId, planId);
     return {                                     
       code: HttpStatus.OK,
