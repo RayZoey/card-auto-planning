@@ -2,7 +2,7 @@
  * @Author: Ray lighthouseinmind@yeah.net
  * @Date: 2025-05-22 09:28:57
  * @LastEditors: Reflection lighthouseinmind@yeah.net
- * @LastEditTime: 2025-09-06 15:35:03
+ * @LastEditTime: 2026-01-18 23:28:23
  * @FilePath: /water/src/timing-scheduler/timing-scheduler.service.ts
  * @Description: 这是默认设置,请设置`customMade`, 打开koroFileHeader查看配置 进行设置: https://github.com/OBKoro1/koro1FileHeader/wiki/%E9%85%8D%E7%BD%AE
  */
@@ -46,4 +46,7 @@ export class TimingSchedulerService {
         });
       }
     }
+
+  //  TODO 每日3点自动关闭所有进行中的任务日，如果存在未完成的任务则顺延
+
 }

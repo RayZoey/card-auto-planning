@@ -2,7 +2,7 @@
  * @Author: Ray lighthouseinmind@yeah.net
  * @Date: 2025-07-08 14:59:59
  * @LastEditors: Reflection lighthouseinmind@yeah.net
- * @LastEditTime: 2025-12-24 00:21:25
+ * @LastEditTime: 2026-01-18 23:46:47
  * @FilePath: /card-auto-planning/src/plan/platform/plan-template/plan-template.controller.ts
  * @Description: 这是默认设置,请设置`customMade`, 打开koroFileHeader查看配置 进行设置: https://github.com/OBKoro1/koro1FileHeader/wiki/%E9%85%8D%E7%BD%AE
  */
@@ -57,6 +57,33 @@ export class UserPlanController {
       res: '成功',
     }; 
   }
+
+  //  用户切换模版
+  @Put('/change-template/:planId')
+  @UseGuards(JwtAuthGuard, RoleGuard('miniUser'))
+  async changeTemplate(@Req() req, @Param('planId') planId: number, @Body('new_template_id') newTemplateId: number) {
+    const userId = req.user.accountId;
+    const res = await this.service.changeTemplate(userId, planId, newTemplateId);
+    return {                                     
+      code: HttpStatus.OK,
+      data: res,
+      res: '成功',
+    }; 
+  }
+
+  //  修改每日时长限制
+  @Put('/day-limit-hour/:planId')
+  @UseGuards(JwtAuthGuard, RoleGuard('miniUser'))
+  async changeDayLimitHour(@Req() req, @Param('planId') planId: number, @Body('date_no') dateNo: number, @Body('min_time') minTime: number) {
+    const userId = req.user.accountId;
+    const res = await this.service.changeDayLimitHour(userId, planId, dateNo, minTime);
+    return {                                     
+      code: HttpStatus.OK,
+      data: res,
+      res: '成功',
+    }; 
+  }
+
 
   @Get()
   @UseGuards(JwtAuthGuard, RoleGuard('miniUser'))
