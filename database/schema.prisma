@@ -310,6 +310,7 @@ model UserTaskScheduler {
   day_sort      Int     @default(1) //  当天内排序值，越小越靠前
   can_divisible Boolean @default(true) //  是否可分割
   date_no       Int     @default(1) //  所属天数序号，从1开始
+  is_postpone   Boolean @default(false) //  是否被顺延
 
   status            TaskStatus     @default(WAITING)
   @@map("user_task_scheduler")

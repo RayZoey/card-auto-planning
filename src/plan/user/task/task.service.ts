@@ -2,7 +2,7 @@
  * @Author: Ray lighthouseinmind@yeah.net
  * @Date: 2025-07-08 14:59:59
  * @LastEditors: Reflection lighthouseinmind@yeah.net
- * @LastEditTime: 2026-01-14 23:05:56
+ * @LastEditTime: 2026-01-20 00:37:32
  * @FilePath: /card-backend/src/card/pdf-print-info/pdf-print-info.service.ts
  * @Description: 这是默认设置,请设置`customMade`, 打开koroFileHeader查看配置 进行设置: https://github.com/OBKoro1/koro1FileHeader/wiki/%E9%85%8D%E7%BD%AE
  */
@@ -1155,12 +1155,30 @@ export class UserTaskService {
   //  用户学习过程-修改单个任务状态
   async changeTaskStatus(taskId: number, status: TaskStatus, userId: number) {
     return await this.prismaService.$transaction(async tx => {
+
       const task = await tx.userTask.findFirst({
         where: { id: taskId, user_id: userId },
+        include: {
+          UserTaskScheduler: true,
+        },
       });
       if (!task) throw new Error('任务不存在或无权限');
       if (task.status in [TaskStatus.COMPLETE]) {
         throw new Error('任务已结束，不可再变更');
+      }
+
+      //  同时只可开始一个任务
+      if (task.status == TaskStatus.WAITING && status === TaskStatus.PROGRESS){
+        const dayTasks = await tx.userTaskScheduler.findMany({
+          where: {
+            plan_id: task.plan_id,
+            date_no: task.UserTaskScheduler[0].date_no,
+            status: {in: [TaskStatus.PROGRESS, TaskStatus.PAUSE] },
+          },
+        });
+        if (dayTasks.length > 0) {
+          throw new Error('当日还有未完成的任务，无法开始新任务');
+        }
       }
 
       const valid: Record<TaskStatus, TaskStatus[]> = {
@@ -1595,7 +1613,8 @@ export class UserTaskService {
         date_no: targetDayNo,
         day_sort: daySort,
         track_id: targetTrack.id,
-      },
+        is_postpone: true, // 标记为被顺延
+      } as any,
     });
   }
 
@@ -2016,7 +2035,8 @@ export class UserTaskService {
         date_no: nextDayNo,
         day_sort: targetDaySort <= 0 ? 1 : targetDaySort,
         track_id: targetTrack.id,
-      },
+        is_postpone: true, // 标记为被顺延
+      } as any,
     });
   }
 
@@ -2128,6 +2148,7 @@ export class UserTaskService {
             day_sort: true,
             date_no: true,
             priority: true,
+            is_postpone: true,
             task: {
               select: {
                 id: true,
@@ -2163,6 +2184,7 @@ export class UserTaskService {
         completed_at: track?.completed_at || null,
         total_time: track?.total_time || null,
         taskList: needTask ? track?.UserTaskScheduler : [],
+        is_postpone: track?.UserTaskScheduler.some(t => t.is_postpone) || false,
         // is_today: dayNo === currentDayNo,
       });
     }
