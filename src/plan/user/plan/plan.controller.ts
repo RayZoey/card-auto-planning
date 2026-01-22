@@ -71,18 +71,36 @@ export class UserPlanController {
     }; 
   }
 
-  //  修改每日时长限制
-  @Put('/day-limit-hour/:planId')
-  @UseGuards(JwtAuthGuard, RoleGuard('miniUser'))
-  async changeDayLimitHour(@Req() req, @Param('planId') planId: number, @Body('date_no') dateNo: number, @Body('min_time') minTime: number) {
-    const userId = req.user.accountId;
-    const res = await this.service.changeDayLimitHour(userId, planId, dateNo, minTime);
-    return {                                     
-      code: HttpStatus.OK,
-      data: res,
-      res: '成功',
-    }; 
-  }
+    //  修改每日时长限制
+    @Put('/day-limit-hour/:planId')
+    @UseGuards(JwtAuthGuard, RoleGuard('miniUser'))
+    async changeDayLimitHour(
+      @Req() req, 
+      @Param('planId') planId: number, 
+      @Body('date_no') dateNo: number, 
+      @Body('min_time') minTime: number,
+      @Body('apply_to_future') applyToFuture: boolean = false
+    ) {
+      const userId = req.user.accountId;
+      const res = await this.service.changeDayLimitHour(userId, planId, dateNo, minTime, applyToFuture);
+      return {                                     
+        code: HttpStatus.OK,
+        data: res,
+        res: '成功',
+      }; 
+    }
+  // //  修改每日时长限制
+  // @Put('/day-limit-hour/:planId')
+  // @UseGuards(JwtAuthGuard, RoleGuard('miniUser'))
+  // async changeDayLimitHour(@Req() req, @Param('planId') planId: number, @Body('date_no') dateNo: number, @Body('min_time') minTime: number) {
+  //   const userId = req.user.accountId;
+  //   const res = await this.service.changeDayLimitHour(userId, planId, dateNo, minTime);
+  //   return {                                     
+  //     code: HttpStatus.OK,
+  //     data: res,
+  //     res: '成功',
+  //   }; 
+  // }
 
 
   @Get()
