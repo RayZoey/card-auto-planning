@@ -63,10 +63,19 @@ export class UserPlanService {
 
   //  获取用户计划中最新一天没有完成的任务列表
   async getLatestUncompletedTasks(userId: number, planId: number) {
-    return await this.prismaService.userPlanDayTrack.findMany({
+    //  判断今日是否有已经完成打卡的日期，如果今天有则返回，如果没有再返回最新计划日
+    const today = new Date();
+    //  获取今天开始和今天结束的时间
+    const todayStart = moment(today).startOf('day').toDate();
+    const todayEnd = moment(today).endOf('day').toDate();
+    const todayTrack = await this.prismaService.userPlanDayTrack.findFirst({
       where: {
         plan_id: planId,
-        is_complete: false,
+        is_complete: true,
+        completed_at: {
+          gte: todayStart,
+          lte: todayEnd,
+        },
       },
       include: {
         UserTaskScheduler: {
@@ -80,11 +89,33 @@ export class UserPlanService {
           }
         }
       },
-      orderBy: {
-        date_no: 'asc'
-      },
-      take: 1,
     });
+    if (todayTrack) {
+      return [todayTrack];
+    }else {
+      return await this.prismaService.userPlanDayTrack.findMany({
+        where: {
+          plan_id: planId,
+          is_complete: false,
+        },
+        include: {
+          UserTaskScheduler: {
+            include: {
+              task: {
+                include: {
+                  group: true,
+                  preset_task_tag: true
+                }
+              }
+            }
+          }
+        },
+        orderBy: {
+          date_no: 'asc'
+        },
+        take: 1,
+      });
+    }
     
   }
 
