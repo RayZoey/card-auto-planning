@@ -6,7 +6,7 @@
  * @FilePath: /card-backend/src/card/pdf-print-info/pdf-print-info.service.ts
  * @Description: 这是默认设置,请设置`customMade`, 打开koroFileHeader查看配置 进行设置: https://github.com/OBKoro1/koro1FileHeader/wiki/%E9%85%8D%E7%BD%AE
  */
-import {HttpException, HttpStatus, Injectable} from '@nestjs/common';
+import {forwardRef, HttpException, HttpStatus, Inject, Injectable} from '@nestjs/common';
 import {PrismaService} from '@src/common/prisma.service';
 import {BaseService} from '@src/base/base.service';
 import {QueryFilter} from '@src/common/query-filter';
@@ -16,6 +16,7 @@ import { UserPlanCreateDto } from './plan.create.dto';
 import { UserPlanUpdateDto } from './plan.update.dto';
 import { PlanStatus, TaskStatus } from '@prisma/client';
 import { AutoPlanningService } from '../auto-planning/planning.service';
+import { UserTaskService } from '../task/task.service';
 const moment = require('moment');
 
 @Injectable()
@@ -23,7 +24,9 @@ export class UserPlanService {
   constructor(
     private readonly prismaService: PrismaService,
     private readonly queryConditionParser: QueryConditionParser,
-    private readonly autoPlanningService: AutoPlanningService
+    private readonly autoPlanningService: AutoPlanningService,
+    @Inject(forwardRef(() => UserTaskService))
+    private readonly userTaskService: UserTaskService,
   ) {}
 
   //  获取下一个计划日可提前任务列表
@@ -326,7 +329,8 @@ export class UserPlanService {
   //  修改计划中计划日的每日时长限制
   //  applyToFuture: true 表示作用于该日及后面所有未开始的计划日，false 表示只修改选择的计划日
   async changeDayLimitHour(userId: number, planId: number, dateNo: number, minTime: number, applyToFuture: boolean = false){
-    return await this.prismaService.$transaction(async (prisma) => {
+    // 第一步：在事务中只负责更新 limit_hour 和各日的 total_time，不做任务排布
+    const { newLimitHourObj, completedDays } = await this.prismaService.$transaction(async (prisma) => {
       const userPlan = await prisma.userPlan.findFirst({
         where: {
           user_id: userId,
@@ -537,456 +541,78 @@ export class UserPlanService {
         newLimitHourObj[currentDayNo.toString()] = dayLimit;
       }
 
-      // 6. 删除未完成计划日相关的调度器记录（必须先删 scheduler，再删 track，避免 track_id 外键约束失败）
-      const uncompletedTrackIds = await prisma.userPlanDayTrack.findMany({
-        where: {
-          plan_id: planId,
-          is_complete: false,
-        },
-        select: { id: true },
-      });
-      const trackIds = uncompletedTrackIds.map(t => t.id);
-      if (trackIds.length > 0) {
-        await prisma.userTaskScheduler.deleteMany({
-          where: { track_id: { in: trackIds } },
-        });
-      }
+      // 6. 把新的日上限写回到 user_plan_day_track.total_time（这是自动规划读取上限的唯一来源）
+      for (const [dayKey, minutes] of Object.entries(newLimitHourObj)) {
+        const dayNo = Number(dayKey);
+        if (!Number.isFinite(dayNo) || dayNo <= completedDays) continue;
+        if (minutes === null || minutes === undefined) continue;
 
-      // 7. 删除未完成的计划日（保留已完成的）
-      await prisma.userPlanDayTrack.deleteMany({
-        where: {
-          plan_id: planId,
-          is_complete: false,
-        },
-      });
-
-      // 8. 基于新的 limit_hour 重新创建计划日并分配任务
-      const trackIdByDay = new Map<number, number>();
-
-      // 先恢复修改那天之前的任务
-      for (const task of tasksBeforeModifiedDay) {
-        const scheduler = task.UserTaskScheduler[0];
-        if (!scheduler) continue;
-
-        // 确保计划日存在
-        if (!trackIdByDay.has(scheduler.date_no)) {
-          const dayLimit = newLimitHourObj[scheduler.date_no.toString()] || minTime;
-          const track = await prisma.userPlanDayTrack.create({
-            data: {
-              plan_id: planId,
-              date_no: scheduler.date_no,
-              total_time: dayLimit,
-              is_complete: false,
-            },
-          });
-          trackIdByDay.set(scheduler.date_no, track.id);
-        }
-
-        // 恢复调度器记录
-        await prisma.userTaskScheduler.create({
-          data: {
+        // 不允许改动已完成打卡日；未完成日则 upsert 并更新 total_time
+        await prisma.userPlanDayTrack.upsert({
+          where: {
+            plan_id_date_no: { plan_id: planId, date_no: dayNo },
+          },
+          update: {
+            total_time: minutes,
+          },
+          create: {
             plan_id: planId,
-            task_id: task.id,
-            track_id: trackIdByDay.get(scheduler.date_no)!,
-            priority: scheduler.priority || 9999,
-            global_sort: scheduler.global_sort || 1,
-            group_sort: scheduler.group_sort,
-            day_sort: scheduler.day_sort || 1,
-            can_divisible: true,
-            date_no: scheduler.date_no,
+            date_no: dayNo,
+            total_time: minutes,
+            is_complete: false,
           },
         });
       }
 
-      // 重新分配任务到新的计划日（从修改那天开始）
-      // 使用类似 fillDayGap 的逻辑：精确填充每一天到限制时间
-      currentDayNo = dateNo;
-      let daySort = 1;
-      let globalSort = 1;
-      const groupCursor = new Map<number, number>();
-      const remainingTasks = [...tasksToReassign]; // 待分配的任务列表
-      const assignedTaskIds = new Set<number>(); // 已分配的任务ID
-
-      // 先分配 remainingTasks 中的任务
-      for (let i = 0; i < tasksToReassign.length; i++) {
-        const task = tasksToReassign[i];
-        const taskTime = task.occupation_time || 0;
-
-        // 确保当前计划日存在
-        if (!trackIdByDay.has(currentDayNo)) {
-          const dayLimitForTrack = newLimitHourObj[currentDayNo.toString()] || minTime;
-          const track = await prisma.userPlanDayTrack.create({
-            data: {
-              plan_id: planId,
-              date_no: currentDayNo,
-              total_time: dayLimitForTrack,
-              is_complete: false,
-            },
-          });
-          trackIdByDay.set(currentDayNo, track.id);
-        }
-
-        // 获取当前天的已分配任务时间
-        const currentDayTasks = await prisma.userTaskScheduler.findMany({
-          where: {
-            plan_id: planId,
-            date_no: currentDayNo,
-          },
-          include: {
-            task: true,
-          },
-        });
-        let currentDayTime = currentDayTasks.reduce((sum, item) => sum + (item.task?.occupation_time || 0), 0);
-        const dayLimit = newLimitHourObj[currentDayNo.toString()] || minTime;
-        const remainingMinutes = dayLimit - currentDayTime;
-
-        // 如果当前天已经满了，移动到下一天
-        if (remainingMinutes <= 0) {
-          currentDayNo++;
-          daySort = 1;
-          i--; // 重新处理当前任务
-          continue;
-        }
-
-        const canDivisible = task.can_divisible !== false;
-        const originalScheduler = task.UserTaskScheduler[0];
-
-        // 如果任务时间 <= 剩余时间，直接分配整个任务
-        if (taskTime <= remainingMinutes) {
-          // 计算 group_sort
-          let groupSort = null;
-          if (task.task_group_id !== null) {
-            const next = (groupCursor.get(task.task_group_id) ?? 0) + 1;
-            groupCursor.set(task.task_group_id, next);
-            groupSort = next;
-          }
-
-          // 创建调度器记录
-          await prisma.userTaskScheduler.create({
-            data: {
-              plan_id: planId,
-              task_id: task.id,
-              track_id: trackIdByDay.get(currentDayNo)!,
-              priority: originalScheduler?.priority || 9999,
-              global_sort: globalSort,
-              group_sort: groupSort,
-              day_sort: daySort,
-              can_divisible: task.can_divisible !== false,
-              date_no: currentDayNo,
-            },
-          });
-
-          assignedTaskIds.add(task.id);
-          currentDayTime += taskTime;
-          daySort += 1;
-          globalSort += 1;
-        } else if (canDivisible && remainingMinutes > 0) {
-          // 如果任务时间 > 剩余时间且可分割，拆分任务
-          const splitMinutes = remainingMinutes;
-          const remainMinutes = taskTime - splitMinutes;
-
-          // 创建新任务（分割出来的部分）
-          const baseName = task.name.replace(/\(\d+\/\d+\)\s*$/, '').trim();
-          const splitTaskName = `${baseName}(${splitMinutes}/${taskTime})`;
-          const remainTaskName = `${baseName}(${remainMinutes}/${taskTime})`;
-
-          const newSplitTask = await prisma.userTask.create({
-            data: {
-              plan_id: task.plan_id,
-              name: splitTaskName,
-              task_group_id: task.task_group_id,
-              preset_task_tag_id: task.preset_task_tag_id,
-              user_id: task.user_id,
-              background: task.background,
-              suggested_time_start: task.suggested_time_start,
-              suggested_time_end: task.suggested_time_end,
-              remark: task.remark,
-              annex_type: task.annex_type,
-              annex: task.annex,
-              timing_type: task.timing_type,
-              occupation_time: splitMinutes,
-              status: task.status,
-              can_divisible: task.can_divisible,
-            },
-          });
-
-          // 更新原任务（剩余部分）
-          await prisma.userTask.update({
-            where: { id: task.id },
-            data: {
-              name: remainTaskName,
-              occupation_time: remainMinutes,
-            },
-          });
-
-          // 计算 group_sort
-          let groupSort = null;
-          if (task.task_group_id !== null) {
-            const next = (groupCursor.get(task.task_group_id) ?? 0) + 1;
-            groupCursor.set(task.task_group_id, next);
-            groupSort = next;
-          }
-
-          // 创建新任务的调度器记录
-          await prisma.userTaskScheduler.create({
-            data: {
-              plan_id: planId,
-              task_id: newSplitTask.id,
-              track_id: trackIdByDay.get(currentDayNo)!,
-              priority: originalScheduler?.priority || 9999,
-              global_sort: globalSort,
-              group_sort: groupSort,
-              day_sort: daySort,
-              can_divisible: task.can_divisible !== false,
-              date_no: currentDayNo,
-            },
-          });
-
-          assignedTaskIds.add(newSplitTask.id);
-          currentDayTime += splitMinutes;
-          daySort += 1;
-          globalSort += 1;
-
-          // 更新原任务信息，将剩余部分加入待分配列表（插入到当前位置之后）
-          task.occupation_time = remainMinutes;
-          task.name = remainTaskName;
-          i--; // 重新处理更新后的任务
-          currentDayNo++;
-          daySort = 1;
-        } else {
-          // 任务不可分割且超过剩余时间，移动到下一天
-          currentDayNo++;
-          daySort = 1;
-          i--; // 重新处理当前任务
-        }
-      }
-
-      // 填充每一天到限制时间（从后续天数中移动任务）
-      let fillDayNo = dateNo;
-      while (true) {
-        // 确保计划日存在
-        if (!trackIdByDay.has(fillDayNo)) {
-          const dayLimitForTrack = newLimitHourObj[fillDayNo.toString()] || minTime;
-          const track = await prisma.userPlanDayTrack.create({
-            data: {
-              plan_id: planId,
-              date_no: fillDayNo,
-              total_time: dayLimitForTrack,
-              is_complete: false,
-            },
-          });
-          trackIdByDay.set(fillDayNo, track.id);
-        }
-
-        // 获取当前天的已分配任务时间
-        const currentDayTasks = await prisma.userTaskScheduler.findMany({
-          where: {
-            plan_id: planId,
-            date_no: fillDayNo,
-          },
-          include: {
-            task: true,
-          },
-        });
-        const currentDayTime = currentDayTasks.reduce((sum, item) => sum + (item.task?.occupation_time || 0), 0);
-        const dayLimit = newLimitHourObj[fillDayNo.toString()] || minTime;
-        const remainingMinutes = dayLimit - currentDayTime;
-
-        // 如果当前天已经满了或没有剩余时间，检查下一天
-        if (remainingMinutes <= 0) {
-          fillDayNo++;
-          // 如果下一天不存在，退出循环
-          if (!newLimitHourObj[fillDayNo.toString()]) {
-            break;
-          }
-          continue;
-        }
-
-        // 从后续天数中找任务来填充
-        const nextDayScheduler = await prisma.userTaskScheduler.findFirst({
-          where: {
-            plan_id: planId,
-            date_no: { gt: fillDayNo },
-            task_id: { notIn: Array.from(assignedTaskIds) },
-          },
-          include: {
-            task: true,
-          },
-          orderBy: [
-            { priority: 'asc' },
-            { global_sort: 'asc' },
-          ],
-        });
-
-        // 如果没有找到任务，退出循环
-        if (!nextDayScheduler || !nextDayScheduler.task) {
-          break;
-        }
-
-        const candidateTask = nextDayScheduler.task;
-        const candidateScheduler = nextDayScheduler;
-        const taskTime = candidateTask.occupation_time || 0;
-        const canDivisible = candidateTask.can_divisible !== false;
-
-        // 获取当前天的 day_sort
-        const currentDaySort = await prisma.userTaskScheduler.count({
-          where: {
-            plan_id: planId,
-            date_no: fillDayNo,
-          },
-        }) + 1;
-
-        // 如果任务时间 <= 剩余时间，直接移动整个任务
-        if (taskTime <= remainingMinutes) {
-          // 删除原调度器记录
-          await prisma.userTaskScheduler.delete({
-            where: { task_id: candidateTask.id },
-          });
-          // 调整原天数的 day_sort
-          await prisma.userTaskScheduler.updateMany({
-            where: {
-              plan_id: planId,
-              date_no: candidateScheduler.date_no,
-              day_sort: { gt: candidateScheduler.day_sort },
-            },
-            data: {
-              day_sort: { decrement: 1 },
-            },
-          });
-
-          // 计算 group_sort
-          let groupSort = null;
-          if (candidateTask.task_group_id !== null) {
-            const next = (groupCursor.get(candidateTask.task_group_id) ?? 0) + 1;
-            groupCursor.set(candidateTask.task_group_id, next);
-            groupSort = next;
-          }
-
-          // 创建新的调度器记录
-          await prisma.userTaskScheduler.create({
-            data: {
-              plan_id: planId,
-              task_id: candidateTask.id,
-              track_id: trackIdByDay.get(fillDayNo)!,
-              priority: candidateScheduler.priority || 9999,
-              global_sort: globalSort,
-              group_sort: groupSort,
-              day_sort: currentDaySort,
-              can_divisible: candidateTask.can_divisible !== false,
-              date_no: fillDayNo,
-            },
-          });
-
-          assignedTaskIds.add(candidateTask.id);
-          globalSort += 1;
-        } else if (canDivisible && remainingMinutes > 0) {
-          // 如果任务时间 > 剩余时间且可分割，拆分任务
-          const splitMinutes = remainingMinutes;
-          const remainMinutes = taskTime - splitMinutes;
-
-          // 创建新任务（分割出来的部分）
-          const baseName = candidateTask.name.replace(/\(\d+\/\d+\)\s*$/, '').trim();
-          const splitTaskName = `${baseName}(${splitMinutes}/${taskTime})`;
-          const remainTaskName = `${baseName}(${remainMinutes}/${taskTime})`;
-
-          const newSplitTask = await prisma.userTask.create({
-            data: {
-              plan_id: candidateTask.plan_id,
-              name: splitTaskName,
-              task_group_id: candidateTask.task_group_id,
-              preset_task_tag_id: candidateTask.preset_task_tag_id,
-              user_id: candidateTask.user_id,
-              background: candidateTask.background,
-              suggested_time_start: candidateTask.suggested_time_start,
-              suggested_time_end: candidateTask.suggested_time_end,
-              remark: candidateTask.remark,
-              annex_type: candidateTask.annex_type,
-              annex: candidateTask.annex,
-              timing_type: candidateTask.timing_type,
-              occupation_time: splitMinutes,
-              status: candidateTask.status,
-              can_divisible: candidateTask.can_divisible,
-            },
-          });
-
-          // 更新原任务（剩余部分）
-          await prisma.userTask.update({
-            where: { id: candidateTask.id },
-            data: {
-              name: remainTaskName,
-              occupation_time: remainMinutes,
-            },
-          });
-
-          // 删除原调度器记录
-          await prisma.userTaskScheduler.delete({
-            where: { task_id: candidateTask.id },
-          });
-          await prisma.userTaskScheduler.updateMany({
-            where: {
-              plan_id: planId,
-              date_no: candidateScheduler.date_no,
-              day_sort: { gt: candidateScheduler.day_sort },
-            },
-            data: {
-              day_sort: { decrement: 1 },
-            },
-          });
-
-          // 计算 group_sort
-          let groupSort = null;
-          if (candidateTask.task_group_id !== null) {
-            const next = (groupCursor.get(candidateTask.task_group_id) ?? 0) + 1;
-            groupCursor.set(candidateTask.task_group_id, next);
-            groupSort = next;
-          }
-
-          // 创建新任务的调度器记录
-          await prisma.userTaskScheduler.create({
-            data: {
-              plan_id: planId,
-              task_id: newSplitTask.id,
-              track_id: trackIdByDay.get(fillDayNo)!,
-              priority: candidateScheduler.priority || 9999,
-              global_sort: globalSort,
-              group_sort: groupSort,
-              day_sort: currentDaySort,
-              can_divisible: candidateTask.can_divisible !== false,
-              date_no: fillDayNo,
-            },
-          });
-
-          assignedTaskIds.add(newSplitTask.id);
-          globalSort += 1;
-
-          // 当前天已满，移动到下一天
-          fillDayNo++;
-          if (!newLimitHourObj[fillDayNo.toString()]) {
-            break;
-          }
-        } else {
-          // 任务不可分割且超过剩余时间，移动到下一天
-          fillDayNo++;
-          if (!newLimitHourObj[fillDayNo.toString()]) {
-            break;
-          }
-        }
-      }
-
-      // 9. 更新 total_days（已完成天数 + 新计算的天数）
-      const newTotalDays = Math.max(completedDays, currentDayNo);
-
-      // 10. 更新计划的总天数和 limit_hour
+      // 7. 更新 limit_hour（总天数先不强求准确，后面会按实际任务分布修正）
       await prisma.userPlan.update({
         where: { id: planId },
         data: {
-          total_days: newTotalDays,
           limit_hour: newLimitHourObj,
         },
       });
 
-      return true;
+      return { newLimitHourObj, completedDays };
     });
+
+    // 第二步：基于新的日上限做自动规划（使用公共 replanFromDay，确保与新增/删除任务后的逻辑一致）
+    await this.userTaskService.replanFromDay(this.prismaService, planId, dateNo);
+
+    // 第三步：清理尾部空天，并同步 total_days / limit_hour（以实际最大 date_no 为准）
+    const lastScheduler = await this.prismaService.userTaskScheduler.findFirst({
+      where: { plan_id: planId },
+      orderBy: { date_no: 'desc' },
+      select: { date_no: true },
+    });
+    const maxTaskDay = lastScheduler?.date_no ?? completedDays;
+    const newTotalDays = Math.max(completedDays, maxTaskDay);
+
+    // 删除超过 newTotalDays 的未完成 track（这些天上应该已无任务）
+    await this.prismaService.userPlanDayTrack.deleteMany({
+      where: {
+        plan_id: planId,
+        is_complete: false,
+        date_no: { gt: newTotalDays },
+      },
+    });
+
+    // trim limit_hour keys
+    const trimmedLimitHour: Record<string, number> = {};
+    for (const [k, v] of Object.entries(newLimitHourObj)) {
+      const dayNo = Number(k);
+      if (!Number.isFinite(dayNo)) continue;
+      if (dayNo <= newTotalDays) trimmedLimitHour[k] = v;
+    }
+
+    await this.prismaService.userPlan.update({
+      where: { id: planId },
+      data: {
+        total_days: newTotalDays,
+        limit_hour: trimmedLimitHour,
+      },
+    });
+
+    return true;
   }
 
   async findById(id: number) {

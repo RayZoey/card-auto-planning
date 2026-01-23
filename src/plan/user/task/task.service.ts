@@ -6,7 +6,7 @@
  * @FilePath: /card-backend/src/card/pdf-print-info/pdf-print-info.service.ts
  * @Description: 这是默认设置,请设置`customMade`, 打开koroFileHeader查看配置 进行设置: https://github.com/OBKoro1/koro1FileHeader/wiki/%E9%85%8D%E7%BD%AE
  */
-import {HttpException, HttpStatus, Injectable} from '@nestjs/common';
+import {forwardRef, HttpException, HttpStatus, Inject, Injectable} from '@nestjs/common';
 import {PrismaService} from '@src/common/prisma.service';
 import {BaseService} from '@src/base/base.service';
 import {QueryFilter} from '@src/common/query-filter';
@@ -24,8 +24,59 @@ export class UserTaskService {
     private readonly prismaService: PrismaService,
     private readonly baseService: BaseService,
     private readonly queryConditionParser: QueryConditionParser,
+    @Inject(forwardRef(() => UserPlanService))
     private readonly planService: UserPlanService,
   ) {}
+
+  /**
+   * 从某一天开始触发自动规划（复用新增/删除任务后的同一套核心逻辑）
+   * - 先按当天上限处理超时：超出则顺延/拆分到后续天
+   * - 再补满当天：不足则从后续天按优先级/任务集规则前移任务（必要时拆分）
+   * - 最后重建全局/当日排序
+   *
+   * 注意：该方法依赖 user_plan_day_track.total_time 作为日上限来源。
+   */
+  async replanFromDay(prismaService: any, planId: number, startDayNo: number) {
+    const plan = await prismaService.userPlan.findUnique({ where: { id: planId } });
+    if (!plan) return;
+
+    // 从 startDayNo 开始往后处理，直到没有更多任务且后续天也不再受影响
+    // 这里不强依赖 plan.total_days 的精确性：handleDayOverflow / fillGap 过程中可能会创建后续天
+    let dayNo = startDayNo;
+    // 防御：避免极端数据导致死循环
+    const maxIterations = 5000;
+    let iter = 0;
+
+    while (iter++ < maxIterations) {
+      // 如果当天没有 track（极少数情况），ensure 一下，避免后续 getDayLimitFromTrack 读不到
+      await this.ensurePlanDayTrack(prismaService, planId, dayNo);
+
+      // 1) 处理超时：把超出的任务顺延/拆分到后续天
+      await this.handleDayOverflow(prismaService, { planId, dayNo, plan });
+
+      // 2) 补满：把后续天的任务前移填充到当天（必要时拆分）
+      await this.recursivelyFillDayGap(prismaService, {
+        planId,
+        targetDayNo: dayNo,
+        minutesNeeded: 0,
+        deletedTaskGroupId: null,
+        deletedGroupSort: null,
+        plan,
+      });
+
+      // 3) 判断是否还需要继续往后处理
+      const hasLaterTasks = await prismaService.userTaskScheduler.findFirst({
+        where: { plan_id: planId, date_no: { gt: dayNo } },
+        select: { task_id: true },
+      });
+      if (!hasLaterTasks) {
+        break;
+      }
+      dayNo += 1;
+    }
+
+    await this.rebuildPlanOrders(prismaService, planId);
+  }
 
   // 确保某计划某日的日跟踪存在，返回记录
   private async ensurePlanDayTrack(prismaService: any, planId: number, dayNo: number) {
@@ -789,12 +840,12 @@ export class UserTaskService {
     await this.prismaService.$transaction(async (tx) => {
       const task = await tx.userTask.create({
         data: {
-          user: { connect: { id: userId } },
-          plan: { connect: { id: dto.plan_id } },
+          user_id: userId,
+          plan_id: dto.plan_id,
           name: dto.name,
           status: dto.status,
-          preset_task_tag: { connect: { id:  dto.preset_task_tag_id } },
-          group: dto.task_group_id ? { connect: { id: dto.task_group_id } } : undefined,
+          preset_task_tag_id: dto.preset_task_tag_id,
+          task_group_id: dto.task_group_id || null,
           background: dto.background,
           suggested_time_start: dto.suggested_time_start,
           suggested_time_end: dto.suggested_time_end,
@@ -803,7 +854,8 @@ export class UserTaskService {
           annex: dto.annex,
           timing_type: dto.timing_type,
           occupation_time: dto.occupation_time,
-        }
+          can_divisible: dto.can_divisible ?? true,
+        },
       });
 
       const schedulerDateNo = dto.UserTaskScheduler.date_no || 1;
@@ -1036,7 +1088,20 @@ export class UserTaskService {
       throw new Error('未找到该任务信息/该任务不属于当前请求用户');
     }
 
-    return this.prismaService.$transaction(async (tx) => {
+    const oldOccupationTime = scheduler.task.occupation_time;
+    const oldPriority = scheduler.priority;
+    const planId = scheduler.plan_id;
+    const dayNo = scheduler.date_no;
+
+    const txRes = await this.prismaService.$transaction(async (tx) => {
+
+      // 更新调度优先级
+      await tx.userTaskScheduler.update({
+        where: { task_id: id },
+        data: {
+          priority: dto.priority,
+        },
+      });
       // 更新任务基础信息
       await tx.userTask.update({
         where: { id },
@@ -1054,20 +1119,24 @@ export class UserTaskService {
         },
       });
 
-      // 更新调度优先级
-      await tx.userTaskScheduler.update({
-        where: { task_id: id },
-        data: {
-          priority: dto.priority,
-        },
-      });
-
-      if (dto.occupation_time && dto.occupation_time !== scheduler.task.occupation_time){
-        await this.planService.changeDayLimitHour(userId, scheduler.task.plan_id, scheduler.date_no, dto.occupation_time, false);
-      }
-
       return { ok: true };
     });
+
+    // 如果任务占用时间 / 优先级有变动，则触发自动规划（不允许改动已完成打卡的日）
+    const needReplan = dto.occupation_time !== oldOccupationTime || dto.priority !== oldPriority;
+    if (needReplan) {
+      const track = await this.prismaService.userPlanDayTrack.findFirst({
+        where: { plan_id: planId, date_no: dayNo },
+        select: { is_complete: true, total_time: true },
+      });
+      if (!track?.is_complete) {
+        const dayLimit = track?.total_time ?? 0;
+        // 传入原本的日上限，不改变 limit_hour，仅触发重排/拆分/填充/总天数重算
+        await this.planService.changeDayLimitHour(userId, planId, dayNo, dayLimit, false);
+      }
+    }
+
+    return txRes;
   }
 
 
@@ -1539,7 +1608,7 @@ export class UserTaskService {
         plan_id: task.plan_id,
         name: fillName,
         task_group_id: task.task_group_id,
-        preset_task_tag: task.preset_task_tag_id,
+        preset_task_tag_id: task.preset_task_tag_id,
         user_id: task.user_id,
         background: task.background,
         suggested_time_start: task.suggested_time_start,
@@ -1922,12 +1991,12 @@ export class UserTaskService {
     // 创建新任务（需要移到次日的部分）
     const newTask = await prismaService.userTask.create({
       data: {
-        user: { connect: { id: task.user_id } },
-        plan: { connect: { id: task.plan_id } },
+        user_id: task.user_id,
+        plan_id: task.plan_id,
         name: moveName,
         status: task.status,
-        preset_task_tag: { connect: { id:  task.preset_task_tag_id } },
-        group: task.task_group_id ? { connect: { id: task.task_group_id } } : undefined,
+        preset_task_tag_id: task.preset_task_tag_id,
+        task_group_id: task.task_group_id,
         background: task.background,
         suggested_time_start: task.suggested_time_start,
         suggested_time_end: task.suggested_time_end,
