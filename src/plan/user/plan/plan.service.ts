@@ -470,9 +470,24 @@ export class UserPlanService {
       let currentDayTime = 0;
       for (const task of tasksToReassign) {
         const taskTime = task.occupation_time || 0;
-        const dayLimit = applyToFuture
-          ? minTime
-          : (currentDayNo === dateNo ? minTime : (newLimitHourObj[currentDayNo.toString()] || limitHourObj[currentDayNo.toString()] || minTime));
+        
+        // 确定当前天的限制时间
+        let dayLimit: number;
+        if (applyToFuture) {
+          dayLimit = minTime;
+        } else {
+          if (currentDayNo === dateNo) {
+            // 修改的目标日使用传入的 minTime
+            dayLimit = minTime;
+          } else if (currentDayNo <= userPlan.total_days) {
+            // 在原计划天数内，使用原来的 limit_hour 或新设置的 limit_hour
+            dayLimit = newLimitHourObj[currentDayNo.toString()] || limitHourObj[currentDayNo.toString()] || minTime;
+          } else {
+            // 超过原计划天数，新增的天数跟前一天保持一致
+            const prevDayKey = (currentDayNo - 1).toString();
+            dayLimit = newLimitHourObj[prevDayKey] || limitHourObj[prevDayKey] || minTime;
+          }
+        }
 
         // 如果当前天已经满了，创建新的一天
         if (currentDayTime + taskTime > dayLimit && currentDayTime > 0) {
@@ -484,9 +499,20 @@ export class UserPlanService {
 
         // 如果是新的一天，设置 limit_hour
         if (!newLimitHourObj[currentDayNo.toString()]) {
-          newLimitHourObj[currentDayNo.toString()] = applyToFuture
-            ? minTime
-            : (currentDayNo === dateNo ? minTime : (limitHourObj[currentDayNo.toString()] || minTime));
+          if (applyToFuture) {
+            newLimitHourObj[currentDayNo.toString()] = minTime;
+          } else {
+            if (currentDayNo === dateNo) {
+              newLimitHourObj[currentDayNo.toString()] = minTime;
+            } else if (currentDayNo <= userPlan.total_days) {
+              // 在原计划天数内，使用原来的 limit_hour
+              newLimitHourObj[currentDayNo.toString()] = limitHourObj[currentDayNo.toString()] || minTime;
+            } else {
+              // 超过原计划天数，新增的天数跟前一天保持一致
+              const prevDayKey = (currentDayNo - 1).toString();
+              newLimitHourObj[currentDayNo.toString()] = newLimitHourObj[prevDayKey] || limitHourObj[prevDayKey] || minTime;
+            }
+          }
         }
 
         currentDayTime += taskTime;
@@ -494,7 +520,20 @@ export class UserPlanService {
 
       // 设置最后一天的 limit_hour
       if (currentDayTime > 0) {
-        const dayLimit = applyToFuture ? minTime : (newLimitHourObj[currentDayNo.toString()] || minTime);
+        let dayLimit: number;
+        if (applyToFuture) {
+          dayLimit = minTime;
+        } else {
+          if (currentDayNo === dateNo) {
+            dayLimit = minTime;
+          } else if (currentDayNo <= userPlan.total_days) {
+            dayLimit = newLimitHourObj[currentDayNo.toString()] || limitHourObj[currentDayNo.toString()] || minTime;
+          } else {
+            // 超过原计划天数，新增的天数跟前一天保持一致
+            const prevDayKey = (currentDayNo - 1).toString();
+            dayLimit = newLimitHourObj[prevDayKey] || limitHourObj[prevDayKey] || minTime;
+          }
+        }
         newLimitHourObj[currentDayNo.toString()] = dayLimit;
       }
 
@@ -949,51 +988,6 @@ export class UserPlanService {
       return true;
     });
   }
-
-  // //  修改计划中计划日的每日时长限制
-  // async changeDayLimitHour(userId: number, planId: number, dateNo: number, minTime: number){
-  //   const userPlan = await this.prismaService.userPlan.findFirst({
-  //     where: {
-  //       user_id: userId,
-  //       id: planId,
-  //       status: 'PROGRESS'
-  //     },
-  //     select: {
-  //       id: true,
-  //       total_days: true,
-  //       limit_hour: true
-  //     }
-  //   });
-  //   if (!userPlan){
-  //     throw new Error('未找到有效的该用户计划信息');
-  //   }
-
-  //   // 解析 limit_hour JSON（可能是字符串或已经是对象）
-  //   let limitHourObj: Record<string, number>;
-  //   if (typeof userPlan.limit_hour === 'string') {
-  //     try {
-  //       limitHourObj = JSON.parse(userPlan.limit_hour);
-  //     } catch (e) {
-  //       throw new Error('limit_hour 格式错误，无法解析');
-  //     }
-  //   } else {
-  //     limitHourObj = userPlan.limit_hour as Record<string, number>;
-  //   }
-
-  //   // 更新对应 dateNo 的值（key 可能是字符串形式的数字）
-  //   const dateNoKey = dateNo.toString();
-  //   limitHourObj[dateNoKey] = minTime;
-
-  //   // 保存回数据库
-  //   await this.prismaService.userPlan.update({
-  //     where: { id: planId },
-  //     data: {
-  //       limit_hour: limitHourObj,
-  //     },
-  //   });
-    
-  //   return true;
-  // }
 
   async findById(id: number) {
     return this.prismaService.userPlan.findUnique({

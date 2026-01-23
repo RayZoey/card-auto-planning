@@ -15,6 +15,7 @@ import { PlanStatus, TaskAnnexType, TaskStatus, TaskTimingType } from '@prisma/c
 import { UserTaskCreateDto } from './task.create.dto';
 import { UserTaskUpdateDto } from './task.update.dto';
 import { UserTaskBaseUpdateDto } from './task.base-update.dto';
+import { UserPlanService } from '../plan/plan.service';
 const moment = require('moment');
 
 @Injectable()
@@ -22,7 +23,8 @@ export class UserTaskService {
   constructor(
     private readonly prismaService: PrismaService,
     private readonly baseService: BaseService,
-    private readonly queryConditionParser: QueryConditionParser
+    private readonly queryConditionParser: QueryConditionParser,
+    private readonly planService: UserPlanService,
   ) {}
 
   // 确保某计划某日的日跟踪存在，返回记录
@@ -1059,6 +1061,10 @@ export class UserTaskService {
           priority: dto.priority,
         },
       });
+
+      if (dto.occupation_time && dto.occupation_time !== scheduler.task.occupation_time){
+        await this.planService.changeDayLimitHour(userId, scheduler.task.plan_id, scheduler.date_no, dto.occupation_time, false);
+      }
 
       return { ok: true };
     });
