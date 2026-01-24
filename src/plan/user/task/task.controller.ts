@@ -122,7 +122,7 @@ export class UserTaskController {
   //  标记今日所有任务已完成（完成打卡）
   @Post('mark-day-complete')
   @UseGuards(JwtAuthGuard, RoleGuard('miniUser'))
-  async markDayComplete(@Req() req, @Body() dto: MarkDayCompleteDto, @Body('learning_experience') learningExperience: string | null, @Body('annex') annex: string | null) {
+  async markDayComplete(@Req() req, @Body() dto: MarkDayCompleteDto, @Body('learning_experience') learningExperience: string | null, @Body('annex') annex: any) {
     const userId = req.user.accountId;
     const res = await this.service.markDayComplete(userId, dto.plan_id, dto.date_no, learningExperience, annex);
     return {

@@ -332,7 +332,7 @@ export class UserTaskService {
   }
 
   //  标记今日所有任务已完成（完成打卡）
-  async markDayComplete(userId: number, planId: number, dateNo: number, learningExperience: string, annex: string | null) {
+  async markDayComplete(userId: number, planId: number, dateNo: number, learningExperience: string, annex: any) {
     //  检查dateNo之前是否有未关闭的date
     const previousDayTracks = await this.prismaService.userPlanDayTrack.findMany({
       where: {
@@ -345,16 +345,21 @@ export class UserTaskService {
       throw new HttpException('第' + dateNo + '天之前有未关闭的日期，无法打卡', HttpStatus.BAD_REQUEST);
     }
     //  检查当日是否已经打卡
-    const existingTrack = await this.prismaService.userPlanDayTrack.findFirst({
+    const existingTrackCheck = await this.prismaService.userPlanDayTrack.findFirst({
       where: {
         plan_id: planId,
         date_no: dateNo,
         is_complete: true,
       },
     });
-    if (existingTrack) {
+    if (existingTrackCheck) {
       throw new HttpException('第' + dateNo + '天已经打卡', HttpStatus.BAD_REQUEST);
     }
+
+    // 处理 annex 和 learning_experience，如果是对象则转为字符串
+    const annexStr = (annex && typeof annex === 'object') ? JSON.stringify(annex) : annex;
+    const learningExperienceStr = (learningExperience && typeof learningExperience === 'object') ? JSON.stringify(learningExperience) : learningExperience;
+
     return await this.prismaService.$transaction(async (tx) => {
       // 验证计划属于该用户
       const plan = await tx.userPlan.findFirst({
@@ -410,8 +415,8 @@ export class UserTaskService {
           data: {
             is_complete: true,
             completed_at: now,
-            learning_experience: learningExperience,
-            annex: annex,
+            learning_experience: learningExperienceStr,
+            annex: annexStr,
           },
         });
       } else {
@@ -424,8 +429,8 @@ export class UserTaskService {
             is_complete: true,
             completed_at: now,
             total_time: totalTime,
-            learning_experience: learningExperience,
-            annex: annex,
+            learning_experience: learningExperienceStr,
+            annex: annexStr,
           },
         });
       }
@@ -1175,10 +1180,13 @@ export class UserTaskService {
       await tx.userTask.delete({
         where: { id: taskId },
       });
+    }, {
+      maxWait: 5000,
+      timeout: 30000,
     });
     return await this.prismaService.userPlan.findUnique({
         where: {
-          id: 5
+          id: scheduler.plan_id
         },
         include: {
           UserTask: {
@@ -2158,14 +2166,16 @@ export class UserTaskService {
             groupSort = next;
           }
 
-          await prismaService.userTaskScheduler.update({
-            where: { task_id: scheduler.task_id },
-            data: {
-              day_sort: daySort,
-              global_sort: globalSort,
-              group_sort: groupSort,
-            },
-          });
+          if (scheduler.day_sort !== daySort || scheduler.global_sort !== globalSort || scheduler.group_sort !== groupSort) {
+            await prismaService.userTaskScheduler.update({
+              where: { task_id: scheduler.task_id },
+              data: {
+                day_sort: daySort,
+                global_sort: globalSort,
+                group_sort: groupSort,
+              },
+            });
+          }
           daySort += 1;
           globalSort += 1;
         }
@@ -2179,14 +2189,16 @@ export class UserTaskService {
             groupSort = next;
           }
 
-          await prismaService.userTaskScheduler.update({
-            where: { task_id: scheduler.task_id },
-            data: {
-              day_sort: daySort,
-              global_sort: globalSort,
-              group_sort: groupSort,
-            },
-          });
+          if (scheduler.day_sort !== daySort || scheduler.global_sort !== globalSort || scheduler.group_sort !== groupSort) {
+            await prismaService.userTaskScheduler.update({
+              where: { task_id: scheduler.task_id },
+              data: {
+                day_sort: daySort,
+                global_sort: globalSort,
+                group_sort: groupSort,
+              },
+            });
+          }
           daySort += 1;
           globalSort += 1;
         }

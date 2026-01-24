@@ -2,7 +2,7 @@
  * @Author: Ray lighthouseinmind@yeah.net
  * @Date: 2025-07-08 14:59:59
  * @LastEditors: Reflection lighthouseinmind@yeah.net
- * @LastEditTime: 2026-01-24 15:50:40
+ * @LastEditTime: 2026-01-24 21:19:12
  * @FilePath: /card-backend/src/card/pdf-print-info/pdf-print-info.service.ts
  * @Description: 这是默认设置,请设置`customMade`, 打开koroFileHeader查看配置 进行设置: https://github.com/OBKoro1/koro1FileHeader/wiki/%E9%85%8D%E7%BD%AE
  */
@@ -190,7 +190,6 @@ export class UserPlanService {
         }
     );
   }
-
   //  用户切换模版
   async changeTemplate(userId: number, planId: number, newTemplateId: number){
     // 1. 查询当前计划
@@ -224,7 +223,7 @@ export class UserPlanService {
     }
 
     return await this.prismaService.$transaction(async (prisma) => {
-      // 3. 获取已完成的最大日期序号（已完成的天数）
+      // 3. 获取已打卡完成的最大日期序号（即保留的天数）
       const completedTracks = await prisma.userPlanDayTrack.findMany({
         where: {
           plan_id: planId,
@@ -237,38 +236,27 @@ export class UserPlanService {
       });
 
       const completedDays = completedTracks.length > 0 ? completedTracks[0].date_no : 0;
-      const startDayNo = completedDays + 1; // 新任务从已完成天数+1开始
 
-      // 4. 删除所有未开始的任务（WAITING 状态）
-      const waitingTasks = await prisma.userTask.findMany({
+      // 4. 删除所有未打卡完成日期关联的任务和调度数据
+      const futureSchedulers = await prisma.userTaskScheduler.findMany({
         where: {
           plan_id: planId,
-          status: TaskStatus.WAITING,
+          date_no: { gt: completedDays }
         },
-        select: {
-          id: true,
-        },
+        select: { task_id: true }
       });
+      const futureTaskIds = futureSchedulers.map(s => s.task_id);
 
-      const waitingTaskIds = waitingTasks.map(t => t.id);
-
-      if (waitingTaskIds.length > 0) {
-        // 删除对应的 scheduler
+      if (futureTaskIds.length > 0) {
         await prisma.userTaskScheduler.deleteMany({
-          where: {
-            task_id: { in: waitingTaskIds },
-          },
+          where: { task_id: { in: futureTaskIds } }
         });
-
-        // 删除任务
         await prisma.userTask.deleteMany({
-          where: {
-            id: { in: waitingTaskIds },
-          },
+          where: { id: { in: futureTaskIds } }
         });
       }
 
-      // 5. 删除未完成的日跟踪记录（保留已完成的）
+      // 5. 删除所有未打卡完成的日跟踪记录
       await prisma.userPlanDayTrack.deleteMany({
         where: {
           plan_id: planId,
@@ -276,53 +264,54 @@ export class UserPlanService {
         },
       });
 
-      // 6. 计算已完成任务的总时间
+      // 6. 计算已完成部分的累计时长（仅计算保留天数内的任务）
       const completedTasksTime = await prisma.userTask.aggregate({
         where: {
           plan_id: planId,
+          UserTaskScheduler: {
+            some: { date_no: { lte: completedDays } }
+          },
           status: { in: [TaskStatus.COMPLETE, TaskStatus.SKIP] },
         },
         _sum: {
           occupation_time: true,
         },
       });
-
       const completedTotalTime = completedTasksTime._sum.occupation_time || 0;
 
-      // 7. 追加生成新模版的任务
+      // 7. 追加生成新模版的任务和日跟踪
       const userTaskGroupsMap = new Map<number, any>();
       const trackIdByDay = new Map<number, number>();
 
-      // 为新模版的每一天创建日跟踪记录
-      for (let i = 0; i < newTemplate.total_days; i++) {
-        const dayNo = startDayNo + i;
+      let templateLimitHour: Record<string, number> = typeof newTemplate.limit_hour === 'string' 
+        ? JSON.parse(newTemplate.limit_hour) 
+        : (newTemplate.limit_hour as Record<string, number>);
+
+      // 为新模板对应的每一天创建日跟踪记录
+      for (let i = 1; i <= newTemplate.total_days; i++) {
+        const dayNo = completedDays + i;
+        const dailyLimit = templateLimitHour[i.toString()] || 0;
+        
         const track = await prisma.userPlanDayTrack.create({
           data: {
             plan_id: planId,
             date_no: dayNo,
-            total_time: 0, // 后续会根据任务计算
+            total_time: dailyLimit,
             is_complete: false,
           },
         });
         trackIdByDay.set(dayNo, track.id);
       }
 
-      // 生成新模版的任务
-      let maxGlobalSort = 0;
-      const existingSchedulers = await prisma.userTaskScheduler.findMany({
+      // 获取当前最大全局排序值
+      const lastScheduler = await prisma.userTaskScheduler.findFirst({
         where: { plan_id: planId },
-        select: { global_sort: true },
         orderBy: { global_sort: 'desc' },
-        take: 1,
       });
-      if (existingSchedulers.length > 0) {
-        maxGlobalSort = existingSchedulers[0].global_sort;
-      }
+      let maxGlobalSort = lastScheduler?.global_sort || 0;
 
       for (const detail of newTemplate.PlanTemplateDetail) {
         let userTaskGroupId: number | null = null;
-
-        // 需要生成任务集
         if (detail.platform_task_group_id) {
           if (!userTaskGroupsMap.has(detail.platform_task_group_id)) {
             const group = await prisma.userTaskGroup.create({
@@ -337,7 +326,6 @@ export class UserPlanService {
           userTaskGroupId = userTaskGroupsMap.get(detail.platform_task_group_id);
         }
 
-        // 生成用户任务
         const task = await prisma.userTask.create({
           data: {
             plan_id: planId,
@@ -354,7 +342,6 @@ export class UserPlanService {
           },
         });
 
-        // 生成用户任务调度数据（日期序号需要加上已完成天数）
         const newDateNo = detail.date_no + completedDays;
         const schedulerData: any = {
           plan_id: planId,
@@ -370,37 +357,29 @@ export class UserPlanService {
         await prisma.userTaskScheduler.create({ data: schedulerData });
       }
 
-      // 8. 合并 limit_hour
-      let limitHourObj: Record<string, number>;
-      if (typeof currentPlan.limit_hour === 'string') {
-        limitHourObj = JSON.parse(currentPlan.limit_hour);
-      } else {
-        limitHourObj = currentPlan.limit_hour as Record<string, number>;
-      }
+      // 8. 合并 limit_hour 配置
+      let oldLimitHour: Record<string, number> = typeof currentPlan.limit_hour === 'string' 
+        ? JSON.parse(currentPlan.limit_hour) 
+        : (currentPlan.limit_hour as Record<string, number>);
 
-      let newLimitHourObj: Record<string, number>;
-      if (typeof newTemplate.limit_hour === 'string') {
-        newLimitHourObj = JSON.parse(newTemplate.limit_hour);
-      } else {
-        newLimitHourObj = newTemplate.limit_hour as Record<string, number>;
+      const mergedLimitHour: Record<string, number> = {};
+      // 保留历史
+      for (let i = 1; i <= completedDays; i++) {
+        mergedLimitHour[i.toString()] = oldLimitHour[i.toString()] || 0;
       }
-
-      // 合并 limit_hour，新模版的日期序号需要加上已完成天数
-      for (const [dayKey, timeValue] of Object.entries(newLimitHourObj)) {
+      // 追加新配置
+      for (const [dayKey, timeValue] of Object.entries(templateLimitHour)) {
         const newDayKey = (parseInt(dayKey) + completedDays).toString();
-        limitHourObj[newDayKey] = timeValue;
+        mergedLimitHour[newDayKey] = timeValue;
       }
 
-      // 9. 更新计划的总天数和总时间
-      const newTotalDays = completedDays + newTemplate.total_days;
-      const newTotalTime = completedTotalTime + newTemplate.total_time;
-
+      // 9. 更新计划主表
       await prisma.userPlan.update({
         where: { id: planId },
         data: {
-          total_days: newTotalDays,
-          total_time: newTotalTime,
-          limit_hour: limitHourObj,
+          total_days: completedDays + newTemplate.total_days,
+          total_time: completedTotalTime + newTemplate.total_time,
+          limit_hour: mergedLimitHour,
         },
       });
 
@@ -790,7 +769,7 @@ export class UserPlanService {
           data: {
             plan_id: userPlan.id,
             date_no: dayNo,
-            total_time: userPlan.total_time,
+            total_time: userPlan.limit_hour[dayNo.toString()],
             is_complete: false,
           },
         });
@@ -849,9 +828,7 @@ export class UserPlanService {
         };
         await prisma.userTaskScheduler.create({ data: schedulerData });
       }
-
       return true;
-      // return { userPlan, userTaskGroups, userTasks };
     });
   }
 }
