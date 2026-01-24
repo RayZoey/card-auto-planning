@@ -2,7 +2,7 @@
  * @Author: Ray lighthouseinmind@yeah.net
  * @Date: 2025-07-08 14:59:59
  * @LastEditors: Reflection lighthouseinmind@yeah.net
- * @LastEditTime: 2026-01-18 23:53:04
+ * @LastEditTime: 2026-01-24 15:50:40
  * @FilePath: /card-backend/src/card/pdf-print-info/pdf-print-info.service.ts
  * @Description: 这是默认设置,请设置`customMade`, 打开koroFileHeader查看配置 进行设置: https://github.com/OBKoro1/koro1FileHeader/wiki/%E9%85%8D%E7%BD%AE
  */
@@ -58,6 +58,57 @@ export class UserPlanService {
           }
         }
       }
+    });
+  }
+
+  //  获取历史日期的任务情况
+  async getHistoryPlanDay(planId: number, date: string){
+    // 日期开始和结束
+    const dateStart = moment(date).startOf('day').toDate();
+    const dateEnd = moment(date).endOf('day').toDate();
+    console.log(dateStart, dateEnd)
+    return await this.prismaService.userPlanDayTrack.findFirst({
+      where: {
+        plan_id: planId,
+        completed_at: {
+          gte: dateStart,
+          lte: dateEnd,
+        },
+      },
+      include: {
+        UserTaskScheduler: {
+          include: {
+            task: {
+              include: {
+                group: true,
+                preset_task_tag: true
+              }
+            }
+          }
+        }
+      },
+    });
+  }
+
+  //  获取未来计划日的任务情况
+  async getFuturePlanDay(planId: number, dateNo: number){
+    return await this.prismaService.userPlanDayTrack.findFirst({
+      where: {
+        plan_id: planId,
+        date_no: dateNo,
+      },
+      include: {
+        UserTaskScheduler: {
+          include: {
+            task: {
+              include: {
+                group: true,
+                preset_task_tag: true
+              }
+            }
+          }
+        }
+      },
     });
   }
 

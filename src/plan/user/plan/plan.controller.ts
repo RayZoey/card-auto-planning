@@ -2,7 +2,7 @@
  * @Author: Ray lighthouseinmind@yeah.net
  * @Date: 2025-07-08 14:59:59
  * @LastEditors: Reflection lighthouseinmind@yeah.net
- * @LastEditTime: 2026-01-18 23:46:47
+ * @LastEditTime: 2026-01-24 15:50:15
  * @FilePath: /card-auto-planning/src/plan/platform/plan-template/plan-template.controller.ts
  * @Description: 这是默认设置,请设置`customMade`, 打开koroFileHeader查看配置 进行设置: https://github.com/OBKoro1/koro1FileHeader/wiki/%E9%85%8D%E7%BD%AE
  */
@@ -35,11 +35,33 @@ export class UserPlanController {
     }; 
   }
 
-
   @Get('/tasks/latest-uncompleted/:planId')
   @UseGuards(JwtAuthGuard, RoleGuard('miniUser'))
   async getLatestUncompletedTasks(@Req() req, @Param('planId') planId: number) {
     const res = await this.service.getLatestUncompletedTasks(req.user.accountId, planId);
+    return {                                     
+      code: HttpStatus.OK,
+      data: res,
+      res: '成功',
+    }; 
+  }
+
+  //  获取某计划中历史日期的任务情况
+  @Get('/tasks/history-plan-day/:planId')
+  @UseGuards(JwtAuthGuard, RoleGuard('miniUser'))
+  async getHistoryPlanDay(@Req() req, @Param('planId') planId: number, @Query('date') date: string) {
+    const res = await this.service.getHistoryPlanDay(planId, date);
+    return {                                     
+      code: HttpStatus.OK,
+      data: res,
+      res: '成功',
+    }; 
+  }
+  //  获取某计划中未来计划日的任务列表
+  @Get('/tasks/future-plan-day/:planId')
+  @UseGuards(JwtAuthGuard, RoleGuard('miniUser'))
+  async getFuturePlanDay(@Req() req, @Param('planId') planId: number, @Query('dateNo') dateNo: number) {
+    const res = await this.service.getFuturePlanDay(planId, dateNo);
     return {                                     
       code: HttpStatus.OK,
       data: res,
