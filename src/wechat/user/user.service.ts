@@ -53,7 +53,6 @@ export class UserService {
         username: true,
         avatar: true,
         phone: true,
-        point: true,
         created_at: true
       }
     });

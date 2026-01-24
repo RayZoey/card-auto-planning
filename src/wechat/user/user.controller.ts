@@ -2,7 +2,7 @@
  * @Author: Ray lighthouseinmind@yeah.net
  * @Date: 2025-04-14 10:51:15
  * @LastEditors: Reflection lighthouseinmind@yeah.net
- * @LastEditTime: 2025-12-16 00:58:42
+ * @LastEditTime: 2026-01-24 15:15:47
  * @FilePath: /water/src/wechat/user/user.controller.ts
  * @Description: 这是默认设置,请设置`customMade`, 打开koroFileHeader查看配置 进行设置: https://github.com/OBKoro1/koro1FileHeader/wiki/%E9%85%8D%E7%BD%AE
  */
@@ -46,6 +46,18 @@ export class UserController {
     return resource;
   }
   
+  @Get('/current-mini-user')
+  @UseGuards(JwtAuthGuard)
+  async findById(@Req() req, @Res() response: Response) {
+    const userId = req.user.accountId;
+    const r = await this.service.findById(userId);
+    response.status(HttpStatus.OK).send({
+      code: HttpStatus.OK,
+      data: r,
+      res: '成功',
+    });
+  }
+
   @Put('/mini-user')
   @UseGuards(JwtAuthGuard)
   async update(@Req() req, @Res() response: Response, @Body() updateDto: UserUpdateDto) {
@@ -109,16 +121,5 @@ export class UserController {
     response.status(HttpStatus.CREATED).send(res);
   }
 
-  @Get('/current-mini-user')
-  @UseGuards(JwtAuthGuard)
-  async findById(@Req() req, @Res() response: Response) {
-    const userId = req.user.accountId;
-    const r = await this.service.findById(userId);
-    response.status(HttpStatus.OK).send({
-      code: HttpStatus.OK,
-      data: r,
-      res: '成功',
-    });
-  }
 
 }
