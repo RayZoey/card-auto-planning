@@ -37,11 +37,26 @@ export class TimingSchedulerService {
         const min = Math.floor(
           moment(t.last_heartbeat_at).diff(moment(t.segment_start), 'seconds') / 60,
         );
+        
         await this.prismaService.userTask.update({
           where: { id: t.id },
           data: {
             status: TaskStatus.PAUSE,
             actual_time: (t.actual_time || 0) + Math.max(0, min),
+          },
+        });
+        await this.prismaService.userTaskScheduler.update({
+          where: { task_id: t.id },
+          data: {
+            status: TaskStatus.PAUSE,
+          },
+        });
+        await this.prismaService.userTaskLog.create({
+          data: {
+            user_task_id: t.id,
+            from_status: TaskStatus.PROGRESS,
+            to_status: TaskStatus.PAUSE,
+            created_at: moment().toDate(),
           },
         });
       }
