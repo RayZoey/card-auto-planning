@@ -67,18 +67,19 @@ export class TimingSchedulerService {
           const plannedOccupationTime = task.occupation_time || 0;
           const oneHourInMinutes = 60;
           
-          // 如果计划耗时 <= 0，跳过自动完结逻辑（避免异常数据导致误判）
+          // 如果计划耗时 <= 0，跳过“超过 1 小时”的判断逻辑（避免异常数据导致误判）
           if (plannedOccupationTime <= 0) {
-            this.logger.warn(`任务 ${task.id} 的计划耗时异常：${plannedOccupationTime}，跳过自动完结判断`);
+            this.logger.warn(`任务 ${task.id} 的计划耗时异常：${plannedOccupationTime}，跳过超过 1 小时判断`);
             // 仍然执行暂停逻辑
             await this.pauseTask(task, currentSegmentMinutes, now.toDate());
             continue;
           }
           
-          // 判断1：当前实际耗时（包含当前段）是否已超过计划耗时1小时以上
+          // 判断1：当前实际耗时（包含当前段）是否已超过计划耗时 1 小时以上
           if (totalActualTimeIncludingCurrentSegment >= plannedOccupationTime + oneHourInMinutes) {
-            await this.completeTask(task, totalActualTimeIncludingCurrentSegment, now.toDate());
-            this.logger.info(`任务 ${task.id} (实际耗时 ${totalActualTimeIncludingCurrentSegment}min) 超过计划耗时1小时以上，自动完结。`);
+            // 现在不再自动完结，而是自动暂停
+            await this.pauseTask(task, currentSegmentMinutes, now.toDate());
+            this.logger.info(`任务 ${task.id} (实际耗时 ${totalActualTimeIncludingCurrentSegment}min) 超过计划耗时 1 小时以上，自动暂停。`);
             continue;
           }
           
@@ -95,8 +96,9 @@ export class TimingSchedulerService {
           const totalPredictedTime = totalActualTimeIncludingCurrentSegment + predictedInterruptionDuration;
           
           if (totalPredictedTime >= plannedOccupationTime + oneHourInMinutes) {
-            await this.completeTask(task, totalPredictedTime, now.toDate());
-            this.logger.info(`任务 ${task.id} (预测总耗时 ${totalPredictedTime}min) 超过计划耗时1小时以上，自动完结。`);
+            // 现在不再自动完结，而是自动暂停，仍然只记录真实已发生的时长
+            await this.pauseTask(task, currentSegmentMinutes, now.toDate());
+            this.logger.info(`任务 ${task.id} (预测总耗时 ${totalPredictedTime}min) 超过计划耗时 1 小时以上，自动暂停。`);
             continue;
           }
           
