@@ -113,54 +113,6 @@ export class TimingSchedulerService {
       this.logger.error(`autoPauseStale 失败: ${error.message}`, error.stack);
     }
   }
-
-  private async completeTask(task: any, actualTime: number, endTime: Date) {
-    return await this.prismaService.$transaction(async (tx) => {
-      // 再次检查任务状态，避免并发修改
-      const currentTask = await tx.userTask.findUnique({
-        where: { id: task.id },
-        select: { status: true },
-      });
-      
-      if (!currentTask || currentTask.status !== TaskStatus.PROGRESS) {
-        this.logger.info(`任务 ${task.id} 状态已变更（当前：${currentTask?.status}），跳过自动完结`);
-        return;
-      }
-      
-      await tx.userTask.update({
-        where: { id: task.id },
-        data: {
-          status: TaskStatus.COMPLETE,
-          actual_time: actualTime,
-          actual_time_end: endTime,
-          segment_start: null, // 重置段开始时间
-        },
-      });
-      
-      const scheduler = await tx.userTaskScheduler.findUnique({
-        where: { task_id: task.id },
-      });
-      
-      if (scheduler) {
-        await tx.userTaskScheduler.update({
-          where: { task_id: task.id },
-          data: { status: TaskStatus.COMPLETE },
-        });
-      } else {
-        this.logger.warn(`任务 ${task.id} 没有找到对应的 UserTaskScheduler`);
-      }
-      
-      await tx.userTaskLog.create({
-        data: {
-          user_task_id: task.id,
-          from_status: TaskStatus.PROGRESS,
-          to_status: TaskStatus.COMPLETE,
-          created_at: endTime,
-        },
-      });
-    });
-  }
-
   private async pauseTask(task: any, segmentDuration: number, pauseTime: Date) {
     return await this.prismaService.$transaction(async (tx) => {
       // 再次检查任务状态，避免并发修改
