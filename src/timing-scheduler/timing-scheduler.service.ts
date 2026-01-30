@@ -26,41 +26,184 @@ export class TimingSchedulerService {
   // 检测用户异常任务状态 每 60s 扫一次
   @Cron(CronExpression.EVERY_MINUTE)
   async autoPauseStale() {
-      const stale = await this.prismaService.userTask.findMany({
+    try {
+      const now = moment();
+      const staleThreshold = moment().subtract(90, 's').toDate(); // 90s 未更新心跳
+      
+      const staleTasks = await this.prismaService.userTask.findMany({
         where: {
           status: TaskStatus.PROGRESS,
-          last_heartbeat_at: { lt: moment().subtract(90, 's').toDate() }, // 90s 未更新心跳
+          last_heartbeat_at: { lt: staleThreshold },
+        },
+        include: {
+          UserTaskScheduler: {
+            take: 1,
+          },
         },
       });
 
-      for (const t of stale) {
-        const min = Math.floor(
-          moment(t.last_heartbeat_at).diff(moment(t.segment_start), 'seconds') / 60,
-        );
-        
-        await this.prismaService.userTask.update({
-          where: { id: t.id },
-          data: {
-            status: TaskStatus.PAUSE,
-            actual_time: (t.actual_time || 0) + Math.max(0, min),
-          },
-        });
-        await this.prismaService.userTaskScheduler.update({
-          where: { task_id: t.id },
-          data: {
-            status: TaskStatus.PAUSE,
-          },
-        });
-        await this.prismaService.userTaskLog.create({
-          data: {
-            user_task_id: t.id,
-            from_status: TaskStatus.PROGRESS,
-            to_status: TaskStatus.PAUSE,
-            created_at: moment().toDate(),
-          },
-        });
+      for (const task of staleTasks) {
+        try {
+          // 计算包含当前段的实际耗时
+          const baseActualTime = task.actual_time || 0;
+          let currentSegmentMinutes = 0;
+          
+          if (task.segment_start && task.last_heartbeat_at) {
+            const segmentStart = moment(task.segment_start);
+            const lastHeartbeat = moment(task.last_heartbeat_at);
+            
+            // 检查时间逻辑：segment_start 应该在 last_heartbeat_at 之前
+            if (segmentStart.isAfter(lastHeartbeat)) {
+              this.logger.warn(`任务 ${task.id} 数据异常：segment_start (${segmentStart.format()}) 晚于 last_heartbeat_at (${lastHeartbeat.format()})`);
+              // 使用 0 作为当前段时长，避免负数
+              currentSegmentMinutes = 0;
+            } else {
+              currentSegmentMinutes = Math.floor(lastHeartbeat.diff(segmentStart, 'seconds') / 60);
+              currentSegmentMinutes = Math.max(0, currentSegmentMinutes);
+            }
+          }
+          
+          const totalActualTimeIncludingCurrentSegment = baseActualTime + currentSegmentMinutes;
+          const plannedOccupationTime = task.occupation_time || 0;
+          const oneHourInMinutes = 60;
+          
+          // 如果计划耗时 <= 0，跳过自动完结逻辑（避免异常数据导致误判）
+          if (plannedOccupationTime <= 0) {
+            this.logger.warn(`任务 ${task.id} 的计划耗时异常：${plannedOccupationTime}，跳过自动完结判断`);
+            // 仍然执行暂停逻辑
+            await this.pauseTask(task, currentSegmentMinutes, now.toDate());
+            continue;
+          }
+          
+          // 判断1：当前实际耗时（包含当前段）是否已超过计划耗时1小时以上
+          if (totalActualTimeIncludingCurrentSegment >= plannedOccupationTime + oneHourInMinutes) {
+            await this.completeTask(task, totalActualTimeIncludingCurrentSegment, now.toDate());
+            this.logger.info(`任务 ${task.id} (实际耗时 ${totalActualTimeIncludingCurrentSegment}min) 超过计划耗时1小时以上，自动完结。`);
+            continue;
+          }
+          
+          // 判断2：实际耗时 + 预测中断耗时是否超过计划耗时1小时以上
+          if (!task.last_heartbeat_at) {
+            this.logger.warn(`任务 ${task.id} 没有 last_heartbeat_at，跳过预测耗时计算`);
+            await this.pauseTask(task, currentSegmentMinutes, now.toDate());
+            continue;
+          }
+          
+          const predictedInterruptionDuration = Math.floor(
+            now.diff(moment(task.last_heartbeat_at), 'seconds') / 60
+          );
+          const totalPredictedTime = totalActualTimeIncludingCurrentSegment + predictedInterruptionDuration;
+          
+          if (totalPredictedTime >= plannedOccupationTime + oneHourInMinutes) {
+            await this.completeTask(task, totalPredictedTime, now.toDate());
+            this.logger.info(`任务 ${task.id} (预测总耗时 ${totalPredictedTime}min) 超过计划耗时1小时以上，自动完结。`);
+            continue;
+          }
+          
+          // 如果不满足上述条件，则暂停任务（原逻辑）
+          await this.pauseTask(task, currentSegmentMinutes, now.toDate());
+          this.logger.info(`任务 ${task.id} 90s 未心跳，自动暂停。`);
+        } catch (error) {
+          this.logger.error(`处理任务 ${task.id} 失败: ${error.message}`, error.stack);
+        }
       }
+    } catch (error) {
+      this.logger.error(`autoPauseStale 失败: ${error.message}`, error.stack);
     }
+  }
+
+  private async completeTask(task: any, actualTime: number, endTime: Date) {
+    return await this.prismaService.$transaction(async (tx) => {
+      // 再次检查任务状态，避免并发修改
+      const currentTask = await tx.userTask.findUnique({
+        where: { id: task.id },
+        select: { status: true },
+      });
+      
+      if (!currentTask || currentTask.status !== TaskStatus.PROGRESS) {
+        this.logger.info(`任务 ${task.id} 状态已变更（当前：${currentTask?.status}），跳过自动完结`);
+        return;
+      }
+      
+      await tx.userTask.update({
+        where: { id: task.id },
+        data: {
+          status: TaskStatus.COMPLETE,
+          actual_time: actualTime,
+          actual_time_end: endTime,
+          segment_start: null, // 重置段开始时间
+        },
+      });
+      
+      const scheduler = await tx.userTaskScheduler.findUnique({
+        where: { task_id: task.id },
+      });
+      
+      if (scheduler) {
+        await tx.userTaskScheduler.update({
+          where: { task_id: task.id },
+          data: { status: TaskStatus.COMPLETE },
+        });
+      } else {
+        this.logger.warn(`任务 ${task.id} 没有找到对应的 UserTaskScheduler`);
+      }
+      
+      await tx.userTaskLog.create({
+        data: {
+          user_task_id: task.id,
+          from_status: TaskStatus.PROGRESS,
+          to_status: TaskStatus.COMPLETE,
+          created_at: endTime,
+        },
+      });
+    });
+  }
+
+  private async pauseTask(task: any, segmentDuration: number, pauseTime: Date) {
+    return await this.prismaService.$transaction(async (tx) => {
+      // 再次检查任务状态，避免并发修改
+      const currentTask = await tx.userTask.findUnique({
+        where: { id: task.id },
+        select: { status: true },
+      });
+      
+      if (!currentTask || currentTask.status !== TaskStatus.PROGRESS) {
+        this.logger.info(`任务 ${task.id} 状态已变更（当前：${currentTask?.status}），跳过自动暂停`);
+        return;
+      }
+      
+      await tx.userTask.update({
+        where: { id: task.id },
+        data: {
+          status: TaskStatus.PAUSE,
+          actual_time: (task.actual_time || 0) + Math.max(0, segmentDuration),
+          segment_start: null, // 重置段开始时间
+        },
+      });
+      
+      const scheduler = await tx.userTaskScheduler.findUnique({
+        where: { task_id: task.id },
+      });
+      
+      if (scheduler) {
+        await tx.userTaskScheduler.update({
+          where: { task_id: task.id },
+          data: { status: TaskStatus.PAUSE },
+        });
+      } else {
+        this.logger.warn(`任务 ${task.id} 没有找到对应的 UserTaskScheduler`);
+      }
+      
+      await tx.userTaskLog.create({
+        data: {
+          user_task_id: task.id,
+          from_status: TaskStatus.PROGRESS,
+          to_status: TaskStatus.PAUSE,
+          created_at: pauseTime,
+        },
+      });
+    });
+  }
 
   //  每日3点自动关闭所有进行中的任务日，如果存在未完成的任务则顺延
   @Cron('0 3 * * *') // 每日凌晨3点执行
