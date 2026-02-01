@@ -2,7 +2,7 @@
  * @Author: Reflection lighthouseinmind@yeah.net
  * @Date: 2025-12-17 23:00:00
  * @LastEditors: Reflection lighthouseinmind@yeah.net
- * @LastEditTime: 2025-12-17 23:00:00
+ * @LastEditTime: 2026-02-01 16:47:58
  * @FilePath: /card-auto-planning/src/plan/user/task/task.base-update.dto.ts
  * @Description: 用户任务基础信息编辑 DTO
  */
@@ -17,6 +17,10 @@ export class UserTaskBaseUpdateDto {
   @Expose({ name: 'background' })
   @Type(() => String)
   background: string;
+
+  @Expose({ name: 'task_group_id' })
+  @Type(() => Number)
+  task_group_id: number | null;
 
   @Expose({ name: 'occupation_time' })
   @Type(() => Number)
@@ -53,4 +57,5 @@ export class UserTaskBaseUpdateDto {
   @Expose({ name: 'timing_type' })
   @Type(() => String)
   timing_type: TaskTimingType;
+
 }
