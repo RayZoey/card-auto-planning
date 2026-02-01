@@ -267,6 +267,7 @@ model UserPlanDayTrack {
   
   learning_experience String? @db.Text //  学习心得
   annex                String?        @db.Text //  附件地址
+  score                Json?          //  评分
 
   created_at DateTime @default(now())
   updated_at DateTime @default(now()) @updatedAt

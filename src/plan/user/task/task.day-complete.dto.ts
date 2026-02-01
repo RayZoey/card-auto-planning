@@ -2,7 +2,7 @@
  * @Author: Ray lighthouseinmind@yeah.net
  * @Date: 2025-11-13 22:09:37
  * @LastEditors: Reflection lighthouseinmind@yeah.net
- * @LastEditTime: 2025-11-13 22:09:37
+ * @LastEditTime: 2026-02-01 16:29:53
  * @FilePath: /card-auto-planning/src/plan/user/task/task.day-complete.dto.ts
  * @Description: 每日结束打卡相关DTO
  */
@@ -16,6 +16,10 @@ export class MarkDayCompleteDto {
   @Expose({name: 'date_no'})
   @Type(() => Number)
   date_no: number;
+
+  /** 评分/前端自定义数据，非必填，存 JSON */
+  @Expose({name: 'score'})
+  score: string;
 }
 
 export class AdvanceNextDayTasksDto {

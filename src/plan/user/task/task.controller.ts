@@ -2,7 +2,7 @@
  * @Author: Ray lighthouseinmind@yeah.net
  * @Date: 2025-07-08 14:59:59
  * @LastEditors: Reflection lighthouseinmind@yeah.net
- * @LastEditTime: 2026-01-14 22:56:53
+ * @LastEditTime: 2026-02-01 16:06:05
  * @FilePath: /card-auto-planning/src/plan/platform/plan-template/plan-template.controller.ts
  * @Description: 这是默认设置,请设置`customMade`, 打开koroFileHeader查看配置 进行设置: https://github.com/OBKoro1/koro1FileHeader/wiki/%E9%85%8D%E7%BD%AE
  */
@@ -19,9 +19,9 @@ import { UserTaskQuery } from './task.query';
 import { UserTaskCreateDto } from './task.create.dto';
 import { UserTaskUpdateDto } from './task.update.dto';
 import { UserTaskBaseUpdateDto } from './task.base-update.dto';
+import { ChangeTaskStatusDto } from './task.change-status.dto';
 import { MarkDayCompleteDto, AdvanceNextDayTasksDto, ProcessDayTasksDto } from './task.day-complete.dto';
 import { UserTaskSplitDto } from './task.split.dto';
-import { TaskStatus } from '@prisma/client';
 
 @Controller('user-task')
 export class UserTaskController {
@@ -44,14 +44,17 @@ export class UserTaskController {
   // 学习状态反馈
   @Put('/change-status/:id')
   @UseGuards(JwtAuthGuard, RoleGuard('miniUser'))
-  async changeTaskStatus(@Req() req, @Param('id') id: number, @Body('status') status: TaskStatus) {
+  async changeTaskStatus(@Req() req, @Param('id') id: number, @Body() dto: ChangeTaskStatusDto) {
     const userId = req.user.accountId;
-    const res = await this.service.changeTaskStatus(id, status, userId);
-    return {                                     
+    const res = await this.service.changeTaskStatus(id, dto.status, userId, {
+      needContinuation: dto.need_continuation,
+      continuationPercentage: dto.continuation_percentage,
+    });
+    return {
       code: HttpStatus.OK,
       data: res,
       res: '成功',
-    }; 
+    };
   }
 
   //  编辑用户任务基础信息
@@ -124,7 +127,7 @@ export class UserTaskController {
   @UseGuards(JwtAuthGuard, RoleGuard('miniUser'))
   async markDayComplete(@Req() req, @Body() dto: MarkDayCompleteDto, @Body('learning_experience') learningExperience: string | null, @Body('annex') annex: any) {
     const userId = req.user.accountId;
-    const res = await this.service.markDayComplete(userId, dto.plan_id, dto.date_no, learningExperience, annex);
+    const res = await this.service.markDayComplete(userId, dto.plan_id, dto.date_no, learningExperience, annex, dto.score);
     return {
       code: HttpStatus.OK,
       data: res,

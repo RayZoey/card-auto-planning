@@ -2,7 +2,7 @@
  * @Author: Ray lighthouseinmind@yeah.net
  * @Date: 2025-07-08 14:59:59
  * @LastEditors: Reflection lighthouseinmind@yeah.net
- * @LastEditTime: 2026-01-20 00:37:32
+ * @LastEditTime: 2026-02-01 16:28:08
  * @FilePath: /card-backend/src/card/pdf-print-info/pdf-print-info.service.ts
  * @Description: 这是默认设置,请设置`customMade`, 打开koroFileHeader查看配置 进行设置: https://github.com/OBKoro1/koro1FileHeader/wiki/%E9%85%8D%E7%BD%AE
  */
@@ -332,7 +332,7 @@ export class UserTaskService {
   }
 
   //  标记今日所有任务已完成（完成打卡）
-  async markDayComplete(userId: number, planId: number, dateNo: number, learningExperience: string, annex: any) {
+  async markDayComplete(userId: number, planId: number, dateNo: number, learningExperience: string, annex: any, score: string) {
     //  检查dateNo之前是否有未关闭的date
     const previousDayTracks = await this.prismaService.userPlanDayTrack.findMany({
       where: {
@@ -417,6 +417,7 @@ export class UserTaskService {
             completed_at: now,
             learning_experience: learningExperienceStr,
             annex: annexStr,
+            score: score,
           },
         });
       } else {
@@ -431,6 +432,7 @@ export class UserTaskService {
             total_time: totalTime,
             learning_experience: learningExperienceStr,
             annex: annexStr,
+            score: score,
           },
         });
       }
@@ -536,9 +538,13 @@ export class UserTaskService {
         }
       }
 
-      // 处理延期任务
-      const tasksNeedAutoFill = needAutoFill ? postponedTasks : [];
-      const tasksNoAutoFill = needAutoFill ? [] : postponedTasks;
+      // 处理延期任务：按原 day_sort 升序排序，保证推迟到次日后的顺序与当日一致（听P1、看P1、做P1）
+      // moveTaskToNextDayTop 每次插入到次日顶端，因此需要按 day_sort 从大到小处理，这样原顺序最小的最后插入、排在次日最前
+      const sortedPostponed = [...postponedTasks].sort(
+        (a, b) => b.scheduler.day_sort - a.scheduler.day_sort
+      );
+      const tasksNeedAutoFill = needAutoFill ? sortedPostponed : [];
+      const tasksNoAutoFill = needAutoFill ? [] : sortedPostponed;
 
       // 先处理不填满时间的任务（简单移动）
       for (const { scheduler } of tasksNoAutoFill) {
@@ -880,10 +886,9 @@ export class UserTaskService {
 
       const scheduler = await tx.userTaskScheduler.create({ data: schedulerData });
 
-      // 如果不需要自动规划或者不需要填充时间，只调整当天其他任务的 day_sort
-      if (!needAutoPlan || !needAutoFill) {
-        // 调整当天其他任务的 day_sort（day_sort >= 新任务 day_sort 的任务需要 +1）
-        await tx.userTaskScheduler.updateMany({
+      // 新增任务后，当日 day_sort >= 新任务的任务都要后移
+      const shiftDaySort = () =>
+        tx.userTaskScheduler.updateMany({
           where: {
             plan_id: dto.plan_id,
             date_no: scheduler.date_no,
@@ -894,22 +899,33 @@ export class UserTaskService {
             day_sort: { increment: 1 },
           },
         });
+
+      // 若是任务集任务，同任务集内 group_sort >= 新任务的任务都要后移，避免重复顺序
+      const shiftGroupSort = () => {
+        if (dto.task_group_id == null || scheduler.group_sort == null) return Promise.resolve();
+        return tx.userTaskScheduler.updateMany({
+          where: {
+            plan_id: dto.plan_id,
+            task: { task_group_id: dto.task_group_id },
+            group_sort: { gte: scheduler.group_sort },
+            task_id: { not: task.id },
+          },
+          data: {
+            group_sort: { increment: 1 },
+          },
+        });
+      };
+
+      // 如果不需要自动规划或者不需要填充时间，只调整当天 day_sort 和任务集内 group_sort
+      if (!needAutoPlan || !needAutoFill) {
+        await shiftDaySort();
+        await shiftGroupSort();
         return;
       }
 
-      // 如果需要自动规划并且需要填充时间，先调整当天其他任务的 day_sort（把今日剩余任务向后推后）
-      // 调整当天其他任务的 day_sort（day_sort >= 新任务 day_sort 的任务需要 +1）
-      await tx.userTaskScheduler.updateMany({
-        where: {
-          plan_id: dto.plan_id,
-          date_no: scheduler.date_no,
-          day_sort: { gte: scheduler.day_sort },
-          task_id: { not: task.id },
-        },
-        data: {
-          day_sort: { increment: 1 },
-        },
-      });
+      // 如果需要自动规划并且需要填充时间，先调整当天 day_sort 和任务集内 group_sort
+      await shiftDaySort();
+      await shiftGroupSort();
 
       // 然后检查当日时间限制
       const plan = await tx.userPlan.findUnique({
@@ -1236,7 +1252,12 @@ export class UserTaskService {
   }
   
   //  用户学习过程-修改单个任务状态
-  async changeTaskStatus(taskId: number, status: TaskStatus, userId: number) {
+  async changeTaskStatus(
+    taskId: number,
+    status: TaskStatus,
+    userId: number,
+    options?: { needContinuation?: boolean; continuationPercentage?: number },
+  ) {
     return await this.prismaService.$transaction(async tx => {
 
       const task = await tx.userTask.findFirst({
@@ -1328,6 +1349,91 @@ export class UserTaskService {
           created_at  : now,
         },
       });
+
+      /* 7. 完成时可选：创建延续任务（名称+【延续】，占用时间=原任务*延续百分比，放在原任务后面） */
+      if (status === TaskStatus.COMPLETE && options?.needContinuation === true) {
+        const pct = options.continuationPercentage;
+        if (pct == null || pct <= 0 || pct > 1) {
+          throw new Error('需要延续时请提供有效的延续百分比（0~1 之间的小数，如 0.2、0.5）');
+        }
+        const newOccupationTime = Math.max(1, Math.floor(task.occupation_time * pct));
+        const scheduler = task.UserTaskScheduler?.[0];
+        if (!scheduler) {
+          throw new Error('任务调度信息不存在，无法创建延续任务');
+        }
+
+        const newTask = await tx.userTask.create({
+          data: {
+            plan_id: task.plan_id,
+            user_id: task.user_id,
+            task_group_id: task.task_group_id,
+            name: `${task.name}【延续】`,
+            preset_task_tag_id: task.preset_task_tag_id,
+            background: task.background,
+            suggested_time_start: task.suggested_time_start,
+            suggested_time_end: task.suggested_time_end,
+            remark: task.remark,
+            annex_type: task.annex_type,
+            annex: task.annex,
+            timing_type: task.timing_type,
+            occupation_time: newOccupationTime,
+            status: TaskStatus.WAITING,
+            can_divisible: task.can_divisible,
+          },
+        });
+
+        // 当日剩余任务 day_sort 后移，为延续任务腾出位置（原任务后面）
+        await tx.userTaskScheduler.updateMany({
+          where: {
+            plan_id: scheduler.plan_id,
+            date_no: scheduler.date_no,
+            day_sort: { gt: scheduler.day_sort },
+          },
+          data: {
+            day_sort: { increment: 1 },
+          },
+        });
+
+        // 计划全局顺序：global_sort 后移
+        await tx.userTaskScheduler.updateMany({
+          where: {
+            plan_id: scheduler.plan_id,
+            global_sort: { gt: scheduler.global_sort },
+          },
+          data: {
+            global_sort: { increment: 1 },
+          },
+        });
+
+        // 任务集顺序：若有 group_sort，则同任务集内后续任务 group_sort 后移（仅同 task_group_id）
+        if (scheduler.group_sort !== null && task.task_group_id != null) {
+          await tx.userTaskScheduler.updateMany({
+            where: {
+              plan_id: scheduler.plan_id,
+              task: { task_group_id: task.task_group_id },
+              group_sort: { gt: scheduler.group_sort },
+            },
+            data: {
+              group_sort: { increment: 1 },
+            },
+          });
+        }
+
+        await tx.userTaskScheduler.create({
+          data: {
+            plan_id: scheduler.plan_id,
+            task_id: newTask.id,
+            track_id: scheduler.track_id,
+            priority: scheduler.priority,
+            global_sort: scheduler.global_sort + 1,
+            group_sort: scheduler.group_sort !== null ? scheduler.group_sort + 1 : null,
+            day_sort: scheduler.day_sort + 1,
+            can_divisible: scheduler.can_divisible,
+            date_no: scheduler.date_no,
+            status: TaskStatus.WAITING,
+          },
+        });
+      }
     });
   }
 
