@@ -86,8 +86,31 @@ model User {
   UserTask               UserTask[]
   UserTaskGroup          UserTaskGroup[]
   UserAndTeacherRelation UserAndTeacherRelation[]
+  InviteCode             InviteCode[]
 
   @@map("user")
+}
+
+//  邀请码
+model InviteCode {
+  id              Int               @id @default(autoincrement())
+  code            String            @unique @db.VarChar(16) //  邀请码内容（6位数字+字母）
+  status          InviteCodeStatus  @default(ENABLE) //  ENABLE=可用，USED=已使用，DISABLE=禁用
+  used_by_user_id Int?
+  used_by_user    User?             @relation(fields: [used_by_user_id], references: [id])
+  used_at         DateTime?
+
+  created_at DateTime @default(now())
+
+  @@map("invite_code")
+}
+
+enum InviteCodeStatus {
+  ENABLE   // 可用
+  USED     // 已使用
+  DISABLE  // 已禁用
+
+  @@map("invite_code_status")
 }
 
 //  后台全局系统配置

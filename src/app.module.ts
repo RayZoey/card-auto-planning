@@ -2,7 +2,7 @@
  * @Author: Ray lighthouseinmind@yeah.net
  * @Date: 2025-05-06 09:11:01
  * @LastEditors: Reflection lighthouseinmind@yeah.net
- * @LastEditTime: 2026-01-19 23:07:33
+ * @LastEditTime: 2026-02-04 21:52:39
  * @FilePath: /water/src/app.module.ts
  * @Description: 这是默认设置,请设置`customMade`, 打开koroFileHeader查看配置 进行设置: https://github.com/OBKoro1/koro1FileHeader/wiki/%E9%85%8D%E7%BD%AE
  */
@@ -20,9 +20,9 @@ import * as winston from "winston";
 import {utilities as nestWinstonModuleUtilities} from "nest-winston/dist/winston.utilities";
 import * as path from 'path';
 import { TimingSchedulerModule } from './timing-scheduler/timing-scheduler.module';
-import { DeepTimezoneMiddleware } from './common/timezone.middleware';
 import { PlanModule } from './plan/plan.module';
 import { TeacherModule } from './teacher/teacher.module';
+import { InviteCodeModule } from './invite-code/invite-code.module';
 
 @Module({
   imports: [
@@ -35,6 +35,7 @@ import { TeacherModule } from './teacher/teacher.module';
     TeacherModule,
     PlanModule,
     TimingSchedulerModule,
+    InviteCodeModule,
     WinstonModule.forRoot({
     level: 'info', // 设置日志级别
     format: winston.format.combine(

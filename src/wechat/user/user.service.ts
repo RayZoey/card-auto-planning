@@ -11,6 +11,7 @@ import Decimal from 'decimal.js';
 import {WINSTON_MODULE_PROVIDER} from 'nest-winston';
 import {Logger} from 'winston';
 import { AuthService } from '@src/auth/account/auth.service';
+import { InviteCodeStatus } from '@prisma/client';
 const _ = require('lodash');
 const moment = require('moment');
 
@@ -132,8 +133,8 @@ export class UserService {
     };
   }
 
-  //    获取openid并创建/查询用户记录
-  async getOpenIdAndCheckUserRecord(code: string) {
+  //    获取openid并创建/查询用户记录（支持邀请码）
+  async getOpenIdAndCheckUserRecord(code: string, inviteCode?: string) {
     const MINI_APPID = this.configService.get('MINI_APPID');
     const MINI_APPSECRET = this.configService.get('MINI_APPSECRET');
     const url =
@@ -156,10 +157,37 @@ export class UserService {
       },
     });
     if (!miniUser) {
-      miniUser = await this.prismaService.user.create({
-        data: {
-          open_id: res['openid'],
-        },
+      // 新用户必须提供有效邀请码
+      if (!inviteCode) {
+        throw new Error('缺少邀请码');
+      }
+
+      await this.prismaService.$transaction(async (tx) => {
+        const invite = await tx.inviteCode.findFirst({
+          where: {
+            code: inviteCode,
+            status: InviteCodeStatus.ENABLE,
+          },
+        });
+        if (!invite) {
+          throw new Error('邀请码不存在或已失效');
+        }
+
+        const created = await tx.user.create({
+          data: {
+            open_id: res['openid'],
+          },
+        });
+        miniUser = created;
+
+        await tx.inviteCode.update({
+          where: { id: invite.id },
+          data: {
+            status: InviteCodeStatus.USED,
+            used_by_user_id: created.id,
+            used_at: new Date(),
+          },
+        });
       });
     }
     const token = await axios

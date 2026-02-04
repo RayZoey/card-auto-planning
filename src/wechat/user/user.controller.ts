@@ -107,9 +107,10 @@ export class UserController {
   @Post('/mini-user/login')
   async getOpenId(
     @Res() response: Response,
-    @Body('code', new DefaultValuePipe(undefined)) code: string
+    @Body('code', new DefaultValuePipe(undefined)) code: string,
+    @Body('invite_code', new DefaultValuePipe(undefined)) inviteCode?: string,
   ) {
-    const res = await this.service.getOpenIdAndCheckUserRecord(code);
+    const res = await this.service.getOpenIdAndCheckUserRecord(code, inviteCode);
     response.status(HttpStatus.CREATED).send(res);
   }
 
