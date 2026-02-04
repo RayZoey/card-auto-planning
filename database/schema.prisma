@@ -168,6 +168,7 @@ model PresetTaskTag {
 model PlatformTaskGroup {
   id   Int    @id @default(autoincrement())
   name String @db.VarChar(80) //  任务集名称
+  background String @default("#0000FF") @db.VarChar(10) //  任务集颜色
 
   created_at                       DateTime                           @default(now())
   updated_at                       DateTime                           @default(now()) @updatedAt
@@ -199,7 +200,6 @@ model PlatformTask {
   name                 String         @db.VarChar(80) //  任务名称
   preset_task_tag_id Int?
   preset_task_tag    PresetTaskTag? @relation(fields: [preset_task_tag_id], references: [id])
-  background           String?        @db.VarChar(10) //  背景色
   suggested_time_start String?        @db.VarChar(20) //  建议时段开始
   suggested_time_end   String?        @db.VarChar(20) //  建议时段结束
   remark               String?        @db.Text //  备注
@@ -283,6 +283,7 @@ model UserTaskGroup {
   plan_id              Int
   plan                 UserPlan      @relation(fields: [plan_id], references: [id])
   name     String     @db.VarChar(80) //  任务集名称
+  background String @default("#0000FF") @db.VarChar(10) //  任务集颜色
   user_id  Int
   user     User       @relation(fields: [user_id], references: [id])
   UserTask UserTask[]
@@ -329,7 +330,6 @@ model UserTask {
   user                 User           @relation(fields: [user_id], references: [id])
   preset_task_tag_id Int?
   preset_task_tag    PresetTaskTag? @relation(fields: [preset_task_tag_id], references: [id])
-  background           String?        @db.VarChar(10) //  背景色
   suggested_time_start String?        @db.VarChar(20) //  建议时段开始
   suggested_time_end   String?        @db.VarChar(20) //  建议时段结束
   remark               String?        @db.Text //  备注

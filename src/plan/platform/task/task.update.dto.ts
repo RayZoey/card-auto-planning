@@ -19,10 +19,6 @@ export class PlatformTaskUpdateDto {
   @Type(() => Number)
   priority: number;
 
-  @Expose({name: 'background'})
-  @Type(() => String)
-  background: string;
-
   @Expose({name: 'suggested_time_start'})
   @Type(() => String)
   suggestedTimeSstart: string;

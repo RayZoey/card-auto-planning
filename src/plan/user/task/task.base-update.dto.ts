@@ -14,10 +14,6 @@ export class UserTaskBaseUpdateDto {
   @Type(() => String)
   name: string;
 
-  @Expose({ name: 'background' })
-  @Type(() => String)
-  background: string;
-
   @Expose({ name: 'task_group_id' })
   @Type(() => Number)
   task_group_id: number | null;

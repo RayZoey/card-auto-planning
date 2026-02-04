@@ -27,10 +27,6 @@ export class UserTaskCreateDto {
   @Type(() => Number)
   task_group_id: number;
 
-  @Expose({name: 'background'})
-  @Type(() => String)
-  background: string;
-
   @Expose({name: 'suggested_time_start'})
   @Type(() => String)
   suggested_time_start: string;

@@ -2,7 +2,7 @@
  * @Author: Ray lighthouseinmind@yeah.net
  * @Date: 2025-07-08 14:59:59
  * @LastEditors: Reflection lighthouseinmind@yeah.net
- * @LastEditTime: 2026-01-24 21:19:12
+ * @LastEditTime: 2026-02-04 20:53:01
  * @FilePath: /card-backend/src/card/pdf-print-info/pdf-print-info.service.ts
  * @Description: 这是默认设置,请设置`customMade`, 打开koroFileHeader查看配置 进行设置: https://github.com/OBKoro1/koro1FileHeader/wiki/%E9%85%8D%E7%BD%AE
  */
@@ -51,7 +51,7 @@ export class UserPlanService {
                 id: true,
                 name: true,
                 task_group_id: true,
-                background: true,
+                group: true,
                 timing_type: true
               }
             }
@@ -317,6 +317,7 @@ export class UserPlanService {
             const group = await prisma.userTaskGroup.create({
               data: {
                 name: detail.platform_task_group?.name ?? '',
+                background: detail.platform_task_group?.background ?? '#0000FF',
                 user_id: userId,
                 plan_id: planId,
               },
@@ -334,7 +335,6 @@ export class UserPlanService {
             task_group_id: userTaskGroupId,
             preset_task_tag_id: detail.platform_task.preset_task_tag_id,
             occupation_time: detail.platform_task.occupation_time,
-            background: detail.platform_task.background || null,
             suggested_time_start: detail.platform_task.suggested_time_start || null,
             suggested_time_end: detail.platform_task.suggested_time_end || null,
             remark: detail.platform_task.remark || null,
@@ -788,6 +788,7 @@ export class UserPlanService {
             const group = await prisma.userTaskGroup.create({
               data: {
                 name: detail.platform_task_group?.name ?? '',
+                background: detail.platform_task_group?.background ?? '#0000FF',
                 user_id: userId,
                 plan_id: userPlan.id
               },
@@ -806,7 +807,6 @@ export class UserPlanService {
             task_group_id: userTaskGroupId,
             preset_task_tag_id:  detail.platform_task.preset_task_tag_id,
             occupation_time: detail.platform_task.occupation_time,
-            background: detail.platform_task.background || null,
             suggested_time_start: detail.platform_task.suggested_time_start || null,
             suggested_time_end: detail.platform_task.suggested_time_end || null,
             remark: detail.platform_task.remark || null,

@@ -2,7 +2,7 @@
  * @Author: Ray lighthouseinmind@yeah.net
  * @Date: 2025-07-08 14:59:59
  * @LastEditors: Reflection lighthouseinmind@yeah.net
- * @LastEditTime: 2026-02-01 16:48:12
+ * @LastEditTime: 2026-02-04 20:53:03
  * @FilePath: /card-backend/src/card/pdf-print-info/pdf-print-info.service.ts
  * @Description: 这是默认设置,请设置`customMade`, 打开koroFileHeader查看配置 进行设置: https://github.com/OBKoro1/koro1FileHeader/wiki/%E9%85%8D%E7%BD%AE
  */
@@ -857,7 +857,6 @@ export class UserTaskService {
           status: dto.status,
           preset_task_tag_id: dto.preset_task_tag_id,
           task_group_id: dto.task_group_id || null,
-          background: dto.background,
           suggested_time_start: dto.suggested_time_start,
           suggested_time_end: dto.suggested_time_end,
           remark: dto.remark,
@@ -1009,7 +1008,6 @@ export class UserTaskService {
           task_group_id: task.task_group_id,
           name: second.name,
           preset_task_tag_id: task.preset_task_tag_id,
-          background: task.background,
           suggested_time_start: task.suggested_time_start,
           suggested_time_end: task.suggested_time_end,
           remark: task.remark,
@@ -1133,7 +1131,6 @@ export class UserTaskService {
         where: { id },
         data: {
           name: dto.name,
-          background: dto.background,
           occupation_time: dto.occupation_time,
           suggested_time_start: dto.suggested_time_start,
           suggested_time_end: dto.suggested_time_end,
@@ -1375,7 +1372,6 @@ export class UserTaskService {
             task_group_id: task.task_group_id,
             name: `${task.name}【延续】`,
             preset_task_tag_id: task.preset_task_tag_id,
-            background: task.background,
             suggested_time_start: task.suggested_time_start,
             suggested_time_end: task.suggested_time_end,
             remark: task.remark,
@@ -1730,7 +1726,6 @@ export class UserTaskService {
         task_group_id: task.task_group_id,
         preset_task_tag_id: task.preset_task_tag_id,
         user_id: task.user_id,
-        background: task.background,
         suggested_time_start: task.suggested_time_start,
         suggested_time_end: task.suggested_time_end,
         remark: task.remark,
@@ -2117,7 +2112,6 @@ export class UserTaskService {
         status: task.status,
         preset_task_tag_id: task.preset_task_tag_id,
         task_group_id: task.task_group_id,
-        background: task.background,
         suggested_time_start: task.suggested_time_start,
         suggested_time_end: task.suggested_time_end,
         remark: task.remark,
@@ -2352,7 +2346,8 @@ export class UserTaskService {
               select: {
                 id: true,
                 name: true,
-                background: true
+                task_group_id: true,
+                group: true,
               }
             }
           }
