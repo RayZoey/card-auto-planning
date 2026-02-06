@@ -2,7 +2,7 @@
  * @Author: Ray lighthouseinmind@yeah.net
  * @Date: 2025-07-08 14:59:59
  * @LastEditors: Reflection lighthouseinmind@yeah.net
- * @LastEditTime: 2025-08-27 22:02:42
+ * @LastEditTime: 2026-02-06 12:08:36
  * @FilePath: /card-backend/src/card/pdf-print-info/pdf-print-info.service.ts
  * @Description: 这是默认设置,请设置`customMade`, 打开koroFileHeader查看配置 进行设置: https://github.com/OBKoro1/koro1FileHeader/wiki/%E9%85%8D%E7%BD%AE
  */
@@ -42,7 +42,7 @@ export class PlatformTaskGroupService {
     });
   }
 
-  async update(id: number, name: string) {
+  async update(id: number, name: string, background: string) {
     const template = await this.prismaService.platformTaskGroup.findFirst({
       where: {
         id
@@ -53,7 +53,8 @@ export class PlatformTaskGroupService {
     }
     return this.prismaService.platformTaskGroup.update({
       data: {
-        name: name
+        name: name,
+        background: background
       },
       where: {
         id: id,
