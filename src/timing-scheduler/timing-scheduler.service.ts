@@ -2,7 +2,7 @@
  * @Author: Ray lighthouseinmind@yeah.net
  * @Date: 2025-05-22 09:28:57
  * @LastEditors: Reflection lighthouseinmind@yeah.net
- * @LastEditTime: 2026-02-08 16:54:15
+ * @LastEditTime: 2026-02-08 19:16:21
  * @FilePath: /water/src/timing-scheduler/timing-scheduler.service.ts
  * @Description: 这是默认设置,请设置`customMade`, 打开koroFileHeader查看配置 进行设置: https://github.com/OBKoro1/koro1FileHeader/wiki/%E9%85%8D%E7%BD%AE
  */
@@ -24,12 +24,11 @@ export class TimingSchedulerService {
 
 
   // 检测用户异常任务状态 每 60s 扫一次
-  @Cron(CronExpression.EVERY_MINUTE)
+  @Cron(CronExpression.EVERY_10_SECONDS)
   async autoPauseStale() {
-    console.log(1111)
     try {
       const now = moment();
-      const staleThreshold = moment().subtract(90, 's').toDate(); // 90s 未更新心跳
+      const staleThreshold = moment().subtract(40, 's').toDate(); // 90s 未更新心跳
       
       const staleTasks = await this.prismaService.userTask.findMany({
         where: {
@@ -45,67 +44,34 @@ export class TimingSchedulerService {
 
       for (const task of staleTasks) {
         try {
-          // 计算包含当前段的实际耗时
+          // actual_time 已在心跳里按整分钟累加，未入库的只有「最后一次 last_heartbeat_at 到 now」
           const baseActualTime = task.actual_time || 0;
-          let currentSegmentMinutes = 0;
-          
-          if (task.segment_start && task.last_heartbeat_at) {
-            const segmentStart = moment(task.segment_start);
-            const lastHeartbeat = moment(task.last_heartbeat_at);
-            
-            // 检查时间逻辑：segment_start 应该在 last_heartbeat_at 之前
-            if (segmentStart.isAfter(lastHeartbeat)) {
-              this.logger.warn(`任务 ${task.id} 数据异常：segment_start (${segmentStart.format()}) 晚于 last_heartbeat_at (${lastHeartbeat.format()})`);
-              // 使用 0 作为当前段时长，避免负数
-              currentSegmentMinutes = 0;
-            } else {
-              currentSegmentMinutes = Math.floor(lastHeartbeat.diff(segmentStart, 'seconds') / 60);
-              currentSegmentMinutes = Math.max(0, currentSegmentMinutes);
-            }
-          }
-          
-          const totalActualTimeIncludingCurrentSegment = baseActualTime + currentSegmentMinutes;
-          const plannedOccupationTime = task.occupation_time || 0;
+          const lastHeartbeat = task.last_heartbeat_at ? moment(task.last_heartbeat_at) : null;
+          const minutesSinceLastHeartbeat = lastHeartbeat
+            ? Math.max(0, Math.floor(now.diff(lastHeartbeat, 'seconds') / 60))
+            : 0;
+          const totalActualTime = baseActualTime + minutesSinceLastHeartbeat; // 总耗时
+          const plannedOccupationTime = task.occupation_time || 0; // 计划耗时
           const oneHourInMinutes = 60;
-          
-          // 如果计划耗时 <= 0，跳过“超过 1 小时”的判断逻辑（避免异常数据导致误判）
-          if (plannedOccupationTime <= 0) {
-            this.logger.warn(`任务 ${task.id} 的计划耗时异常：${plannedOccupationTime}，跳过超过 1 小时判断`);
-            // 仍然执行暂停逻辑
-            await this.pauseTask(task, currentSegmentMinutes, now.toDate());
+          const limit = plannedOccupationTime + oneHourInMinutes;   // 计划+1小时
+
+          // 仅当满足以下两种之一才自动暂停，否则不操作
+          const overByTotal = totalActualTime >= limit;   // 总耗时 >= 计划+1小时
+          const overByBase = baseActualTime >= limit;     // 已入库 actual_time >= 计划+1小时
+          const shouldPause = plannedOccupationTime > 0 && (overByTotal || overByBase);
+
+          if (!shouldPause) {
+            if (plannedOccupationTime <= 0) {
+              this.logger.warn(`任务 ${task.id} 的计划耗时异常：${plannedOccupationTime}，跳过`);
+            }
             continue;
           }
-          
-          // 判断1：当前实际耗时（包含当前段）是否已超过计划耗时 1 小时以上
-          if (totalActualTimeIncludingCurrentSegment >= plannedOccupationTime + oneHourInMinutes) {
-            // 现在不再自动完结，而是自动暂停
-            await this.pauseTask(task, currentSegmentMinutes, now.toDate());
-            this.logger.info(`任务 ${task.id} (实际耗时 ${totalActualTimeIncludingCurrentSegment}min) 超过计划耗时 1 小时以上，自动暂停。`);
-            continue;
-          }
-          
-          // 判断2：实际耗时 + 预测中断耗时是否超过计划耗时1小时以上
-          if (!task.last_heartbeat_at) {
-            this.logger.warn(`任务 ${task.id} 没有 last_heartbeat_at，跳过预测耗时计算`);
-            await this.pauseTask(task, currentSegmentMinutes, now.toDate());
-            continue;
-          }
-          
-          const predictedInterruptionDuration = Math.floor(
-            now.diff(moment(task.last_heartbeat_at), 'seconds') / 60
+
+          // 暂停时把 last_heartbeat_at 到 now 的分钟数加入 actual_time
+          await this.pauseTask(task, minutesSinceLastHeartbeat, now.toDate());
+          this.logger.info(
+            `任务 ${task.id} 超时未心跳，自动暂停。总耗时 ${totalActualTime}min，计划 ${plannedOccupationTime}min。`,
           );
-          const totalPredictedTime = totalActualTimeIncludingCurrentSegment + predictedInterruptionDuration;
-          
-          if (totalPredictedTime >= plannedOccupationTime + oneHourInMinutes) {
-            // 现在不再自动完结，而是自动暂停，仍然只记录真实已发生的时长
-            await this.pauseTask(task, currentSegmentMinutes, now.toDate());
-            this.logger.info(`任务 ${task.id} (预测总耗时 ${totalPredictedTime}min) 超过计划耗时 1 小时以上，自动暂停。`);
-            continue;
-          }
-          
-          // 如果不满足上述条件，则暂停任务（原逻辑）
-          await this.pauseTask(task, currentSegmentMinutes, now.toDate());
-          this.logger.info(`任务 ${task.id} 90s 未心跳，自动暂停。`);
         } catch (error) {
           this.logger.error(`处理任务 ${task.id} 失败: ${error.message}`, error.stack);
         }
@@ -157,12 +123,15 @@ export class TimingSchedulerService {
           created_at: pauseTime,
         },
       });
+
+      this.logger.info(`任务 ${task.id} 自动暂停，总耗时 ${Math.max(0, segmentDuration)}min，暂停时间 ${pauseTime}`);
     });
   }
 
   //  每日3点自动关闭所有进行中的任务日，如果存在未完成的任务则顺延
-  @Cron('0 3 * * *') // 每日凌晨3点执行
+  @Cron(CronExpression.EVERY_DAY_AT_3AM) // 每日凌晨3点执行
   async autoClosePreviousDayTasks() {
+    console.log(2222)
     try {
       const now = moment();
       const yesterday = moment().subtract(1, 'day');

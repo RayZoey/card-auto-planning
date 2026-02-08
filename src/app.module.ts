@@ -37,7 +37,8 @@ import { InviteCodeModule } from './invite-code/invite-code.module';
     TimingSchedulerModule,
     InviteCodeModule,
     WinstonModule.forRoot({
-    level: 'info', // 设置日志级别
+    // 所有环境统一输出 error、warn、info；可通过 LOG_LEVEL 改为 debug 等
+    level: process.env.LOG_LEVEL || 'info',
     format: winston.format.combine(
       winston.format.timestamp(),
       winston.format.errors({stack: true}), // 显示堆栈信息
@@ -50,15 +51,10 @@ import { InviteCodeModule } from './invite-code/invite-code.module';
       }) // 使用 JSON 格式
     ),
     transports: [
-      new winston.transports.File({filename: path.join(process.env.LOG_DIR || path.join(__dirname, '..', 'logs'), 'error.log'), level: 'error'}),
-      new winston.transports.File({filename: path.join(process.env.LOG_DIR || path.join(__dirname, '..', 'logs'), 'combined.log')}),
+      new winston.transports.Console({ level: process.env.LOG_LEVEL || 'info' }),
+      new winston.transports.File({ filename: path.join(process.env.LOG_DIR || path.join(__dirname, '..', 'logs'), 'error.log'), level: 'error' }),
+      new winston.transports.File({ filename: path.join(process.env.LOG_DIR || path.join(__dirname, '..', 'logs'), 'combined.log') }),
     ],
-    // 在开发环境中，将日志输出到控制台
-    ...(process.env.NODE_ENV !== 'production' && {
-      transports: [
-        new winston.transports.Console({}),
-      ],
-    }),
   })
   ],
   providers: [

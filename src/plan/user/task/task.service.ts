@@ -1439,17 +1439,38 @@ export class UserTaskService {
     });
   }
 
-  /* 学习心跳接口 */
+  /* 学习心跳接口：更新 last_heartbeat_at，并顺带把当前段时长累加到 actual_time，避免异常退出时丢失 */
   async heartbeat(taskId: number, userId: number) {
-    const res = await this.prismaService.userTask.updateMany({
+    const task = await this.prismaService.userTask.findFirst({
       where: {
         id: taskId,
         user_id: userId,
         status: TaskStatus.PROGRESS,
       },
-      data: { last_heartbeat_at: new Date() },
+      select: { id: true, segment_start: true, actual_time: true },
     });
-    if (res.count === 0) throw new Error('任务不存在或已结束');
+    if (!task) throw new Error('任务不存在或已结束');
+
+    const now = new Date();
+    const upd: { last_heartbeat_at: Date; actual_time?: number; segment_start?: Date } = {
+      last_heartbeat_at: now,
+    };
+
+    if (task.segment_start) {
+      const segmentMinutes = Math.floor(
+        moment(now).diff(moment(task.segment_start), 'seconds') / 60
+      );
+      upd.actual_time = (task.actual_time ?? 0) + Math.max(0, segmentMinutes);
+      // 只把已计入的整分钟从段起点扣除，保留“不足 1 分钟”的零头，否则心跳间隔 <1 分钟时 actual_time 永远 +0
+      if (segmentMinutes > 0) {
+        upd.segment_start = moment(task.segment_start).add(segmentMinutes, 'minutes').toDate();
+      }
+    }
+
+    await this.prismaService.userTask.update({
+      where: { id: taskId },
+      data: upd,
+    });
     return { ok: true };
   }
 
