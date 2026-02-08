@@ -1,10 +1,40 @@
+/*
+ * @Author: Reflection lighthouseinmind@yeah.net
+ * @Date: 2026-02-04 21:44:27
+ * @LastEditors: Reflection lighthouseinmind@yeah.net
+ * @LastEditTime: 2026-02-08 17:07:57
+ * @FilePath: /card-auto-planning/src/invite-code/invite-code.service.ts
+ * @Description: 这是默认设置,请设置`customMade`, 打开koroFileHeader查看配置 进行设置: https://github.com/OBKoro1/koro1FileHeader/wiki/%E9%85%8D%E7%BD%AE
+ */
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '@src/common/prisma.service';
 import { InviteCodeStatus } from '@prisma/client';
+import { InviteCodeQueryCondition } from './invit-code.query-condition';
+import { QueryConditionParser } from '@src/common/query-condition-parser';
+import { QueryFilter } from '@src/common/query-filter';
 
 @Injectable()
 export class InviteCodeService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(private readonly prisma: PrismaService, private readonly queryConditionParser: QueryConditionParser) {}
+
+  async findAll(queryCondition: InviteCodeQueryCondition, offset: number, limit: number) {
+    const filter: QueryFilter = this.queryConditionParser.parse(queryCondition);
+    return this.prisma.inviteCode.findMany({
+      skip: offset,
+      take: limit,
+      orderBy: {
+        id: 'desc',
+      },
+      where: filter,
+    });
+  }
+
+  async findTotal(queryCondition: InviteCodeQueryCondition) {
+    const filter: QueryFilter = this.queryConditionParser.parse(queryCondition);
+    return this.prisma.inviteCode.count({
+      where: filter,
+    });
+  }
 
   private generateRandomCode(): string {
     const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
