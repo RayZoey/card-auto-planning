@@ -159,7 +159,7 @@ export class UserService {
     if (!miniUser) {
       // 新用户必须提供有效邀请码
       if (!inviteCode) {
-        throw new Error('缺少邀请码');
+        throw new UnauthorizedException('缺少邀请码');
       }
 
       await this.prismaService.$transaction(async (tx) => {
@@ -176,6 +176,7 @@ export class UserService {
         const created = await tx.user.create({
           data: {
             open_id: res['openid'],
+            union_id: res['unionid'],
           },
         });
         miniUser = created;

@@ -80,6 +80,7 @@ model User {
   avatar                 String?                  @db.VarChar(200)
   phone                  String?                  @unique @db.VarChar(20)
   open_id                String                   @db.VarChar(80)
+  union_id               String?                  @unique @db.VarChar(80)
   point                  Int                      @default(0) //  总积分
   created_at             DateTime                 @default(now())
   UserPlan               UserPlan[]
