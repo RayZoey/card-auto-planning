@@ -1146,9 +1146,9 @@ export class UserTaskService {
       return { ok: true };
     });
 
-    // 如果任务占用时间 / 优先级有变动，则触发自动规划（不允许改动已完成打卡的日）
-    const needReplan = dto.occupation_time !== oldOccupationTime || dto.priority !== oldPriority;
-    if (needReplan) {
+    // 仅当用户要求自动规划且占用时间/优先级有变动时，才触发自动规划（如从次日切割任务往前挪等）
+    const hasTimeOrPriorityChange = dto.occupation_time !== oldOccupationTime || dto.priority !== oldPriority;
+    if (hasTimeOrPriorityChange && dto.need_auto_plan === true) {
       const track = await this.prismaService.userPlanDayTrack.findFirst({
         where: { plan_id: planId, date_no: dayNo },
         select: { is_complete: true, total_time: true },

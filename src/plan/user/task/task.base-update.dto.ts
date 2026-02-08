@@ -8,8 +8,16 @@
  */
 import { TaskAnnexType, TaskTimingType } from '@prisma/client';
 import { Expose, Type } from 'class-transformer';
+import { IsBoolean, IsOptional } from 'class-validator';
 
 export class UserTaskBaseUpdateDto {
+  /** 是否在占用时间/优先级变动后触发自动规划（如从次日切割任务往前挪等）；不传或 false 则仅更新信息 */
+  @Expose({ name: 'need_auto_plan' })
+  @Type(() => Boolean)
+  @IsOptional()
+  @IsBoolean()
+  need_auto_plan?: boolean;
+
   @Expose({ name: 'name' })
   @Type(() => String)
   name: string;
