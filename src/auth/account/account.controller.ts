@@ -18,7 +18,7 @@ export class AccountController {
   ) {}
 
   @Get()
-  // @UseGuards(JwtAuthGuard)
+  @UseGuards(JwtAuthGuard)
   async list(@Query() pagination: PaginationDto, @Query() queryDto: AccountQuery) {
     const offset = this.offsetCalculator.calculate(pagination.page, pagination.pageSize);
     const queryCondition = new AccountQueryCondition();
