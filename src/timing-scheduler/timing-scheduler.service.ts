@@ -2,7 +2,7 @@
  * @Author: Ray lighthouseinmind@yeah.net
  * @Date: 2025-05-22 09:28:57
  * @LastEditors: Reflection lighthouseinmind@yeah.net
- * @LastEditTime: 2026-02-08 19:20:28
+ * @LastEditTime: 2026-02-10 21:35:18
  * @FilePath: /water/src/timing-scheduler/timing-scheduler.service.ts
  * @Description: 这是默认设置,请设置`customMade`, 打开koroFileHeader查看配置 进行设置: https://github.com/OBKoro1/koro1FileHeader/wiki/%E9%85%8D%E7%BD%AE
  */
@@ -24,7 +24,7 @@ export class TimingSchedulerService {
 
 
   // 检测用户异常任务状态 每 60s 扫一次
-  @Cron(CronExpression.EVERY_MINUTE)
+  // @Cron(CronExpression.EVERY_MINUTE)
   async autoPauseStale() {
     try {
       const now = moment();
@@ -129,7 +129,7 @@ export class TimingSchedulerService {
   }
 
   //  每日3点自动关闭所有进行中的任务日，如果存在未完成的任务则顺延
-  @Cron(CronExpression.EVERY_DAY_AT_3AM) // 每日凌晨3点执行
+  // @Cron(CronExpression.EVERY_DAY_AT_3AM) // 每日凌晨3点执行
   async autoClosePreviousDayTasks() {
     console.log(2222)
     try {
