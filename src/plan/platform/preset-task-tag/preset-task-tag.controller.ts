@@ -34,4 +34,41 @@ export class PresetTaskTagController {
     });
     return resource;
   }
+  // 新增标签
+  @Post()
+  @UseGuards(JwtAuthGuard, RoleGuard('backUser'))
+  async create(@Body('tag_name') tagName: string, @Body('tag_icon') tagIcon: string) {
+    const res = await this.service.create(tagName, tagIcon);
+    return {                                     
+      code: HttpStatus.CREATED,
+      data: res,
+      res: '标签创建成功',
+    }; 
+  }
+
+  //  更新标签
+  @Put(':id')
+  @UseGuards(JwtAuthGuard, RoleGuard('backUser'))
+  async update(@Param('id') id: number, @Body('tag_name') tagName: string, @Body('tag_icon') tagIcon: string) {
+    const res = await this.service.update(id, tagName, tagIcon);
+    return {                                     
+      code: HttpStatus.OK,
+      data: res,
+      res: '标签更新成功',
+    }; 
+  }
+
+  //  删除标签
+  @Delete(':id')
+  @UseGuards(JwtAuthGuard, RoleGuard('backUser'))
+  async delete(@Param('id') id: number) {
+    const res = await this.service.delete(id);
+    return {                                     
+      code: HttpStatus.OK,
+      data: res,
+      res: '成功',
+    }; 
+  }
+
+
 }

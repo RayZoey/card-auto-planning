@@ -16,6 +16,7 @@ export class PresetTaskTagService {
   ) {}
 
   async findAll(offset: number, limit: number) {
+    //  查询所有标签，并查询每个标签下有多少个任务
     return this.prismaService.presetTaskTag.findMany({
       orderBy: {
         id: 'desc',
@@ -29,4 +30,47 @@ export class PresetTaskTagService {
     return this.prismaService.presetTaskTag.count();
   }
 
+  async create(tagName: string, tagIcon: string) {
+    return this.prismaService.presetTaskTag.create({
+      data: {
+        tag_name: tagName,
+        tag_icon: tagIcon,
+      },
+    });
+  }
+
+  async update(id: number, tagName: string, tagIcon: string) {
+    return this.prismaService.presetTaskTag.update({
+      where: { id },
+      data: {
+        tag_name: tagName,
+        tag_icon: tagIcon,
+      },
+    });
+  }
+
+  async delete(id: number) {
+    //  如果有被使用过，则报错
+    const presetTaskTag = await this.prismaService.presetTaskTag.findFirst({
+      where: { id },
+      include: {
+        platformTask: {
+          select: {
+            id: true,
+          },
+        },
+        userTask: {
+          select: {
+            id: true,
+          },
+        },
+      },
+    });
+    if (presetTaskTag.platformTask.length > 0 || presetTaskTag.userTask.length > 0) {
+      throw new Error('标签被使用过，无法删除');
+    }
+    return this.prismaService.presetTaskTag.delete({
+      where: { id },
+    });
+  }
 }
