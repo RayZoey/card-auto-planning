@@ -19,6 +19,10 @@ export class PlatformTaskUpdateDto {
   @Type(() => Number)
   priority: number;
 
+  @Expose({name: 'preset_task_tag_id'})
+  @Type(() => Number)
+  presetTaskTagId: number;
+
   @Expose({name: 'suggested_time_start'})
   @Type(() => String)
   suggestedTimeSstart: string;

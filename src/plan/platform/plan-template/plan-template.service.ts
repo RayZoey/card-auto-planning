@@ -114,13 +114,20 @@ export class PlatformPlanTemplateService {
       const limitHour = _.mapValues(taskListGroupByDateNo, arr =>
         _.sumBy(arr, 'platform_task.occupation_time')
       );
+      
+      // 计算总天数（limit_hour 中最大的日期号）
+      const totalDays = Object.keys(limitHour).length > 0 
+        ? Math.max(...Object.keys(limitHour).map(k => parseInt(k, 10)))
+        : 0;
+      
       await prismaService.planTemplate.update({
         where: {
           id: template.id
         },
         data: {
           limit_hour: limitHour,  //  日时限
-          total_time: _.sum(_.values(limitHour))  //  总时常
+          total_time: _.sum(_.values(limitHour)),  //  总时常
+          total_days: totalDays,  //  总天数（根据 limit_hour 自动计算）
         },
       });
       return true;

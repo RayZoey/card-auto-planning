@@ -16,6 +16,9 @@ import { RoleGuard } from '@src/auth/role.guard';
 import { PlatformTaskService } from './task.service';
 import { PlatformTaskUpdateDto } from './task.update.dto';
 import { PlatformTaskCreateDto } from './task.create.dto';
+import { PlatformTaskUpdateSortDto } from './task.update-sort.dto';
+import { PlatformTaskQueryCondition } from './task.query-condition';
+import { PlatformTaskQuery } from './task.query';
 
 @Controller('platform-task')
 export class PlatformTaskController {
@@ -23,11 +26,16 @@ export class PlatformTaskController {
 
   @Get()
   @UseGuards(JwtAuthGuard, RoleGuard('backUser'))
-  async list(@Req() request: Request, @Query() pagination: PaginationDto) {
+  async list(@Req() request: Request, @Query() pagination: PaginationDto, @Query() query: PlatformTaskQuery) {
     const offset = this.offsetCalculator.calculate(pagination.page, pagination.pageSize);
     const limit = pagination.pageSize;
-    const data = await this.service.findAll(offset, limit);
-    const total = await this.service.findTotal();
+    const queryCondition = new PlatformTaskQueryCondition();
+    queryCondition.name = query.name;
+    queryCondition.presetTaskTagId = query.presetTaskTagId;
+    queryCondition.remark = query.remark;
+    queryCondition.timingType = query.timingType;
+    const data = await this.service.findAll(queryCondition, offset, limit);
+    const total = await this.service.findTotal(queryCondition);
     const resource = new CollectionResource(data);
     resource.addMeta('pagination', {
       page_size: pagination.pageSize,
@@ -35,6 +43,18 @@ export class PlatformTaskController {
       total,
     });
     return resource;
+  }
+
+
+  @Get(':id')
+  @UseGuards(JwtAuthGuard, RoleGuard('backUser'))
+  async findById(@Param('id') id: number) {
+    const res = await this.service.findById(id);
+    return {                                     
+      code: HttpStatus.OK,
+      data: res,
+      res: '成功',
+    }; 
   }
 
   @Post()
@@ -48,10 +68,21 @@ export class PlatformTaskController {
     }; 
   }
 
-  @Put(':id')
+  @Put('/baseinfo/:id')
   @UseGuards(JwtAuthGuard, RoleGuard('backUser'))
   async update(@Param('id') id: number, @Body() dto: PlatformTaskUpdateDto) {
     const res = await this.service.update(id, dto);
+    return {                                     
+      code: HttpStatus.OK,
+      data: res,
+      res: '成功',
+    }; 
+  }
+
+  @Put('group-sort/:id')
+  @UseGuards(JwtAuthGuard, RoleGuard('backUser'))
+  async updateGroupSort(@Param('id') id: number, @Body() dto: PlatformTaskUpdateSortDto) {
+    const res = await this.service.updateGroupSort(id, dto.groupSort);
     return {                                     
       code: HttpStatus.OK,
       data: res,

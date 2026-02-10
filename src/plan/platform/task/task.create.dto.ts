@@ -15,10 +15,6 @@ export class PlatformTaskCreateDto {
   @Type(() => String)
   name: string;
 
-  @Expose({name: 'priority'})
-  @Type(() => Number)
-  priority: number;
-
   @Expose({name: 'suggested_time_start'})
   @Type(() => String)
   suggestedTimeSstart: string;
@@ -50,4 +46,20 @@ export class PlatformTaskCreateDto {
   @Expose({name: 'can_divisible'})
   @Type(() => Boolean)
   canDivisible: boolean;
+
+  @Expose({name: 'platform_task_group_id'})
+  @Type(() => Number)
+  platformTaskGroupId?: number; // 任务集ID（可选，如果指定则创建任务集关联）
+
+  @Expose({name: 'group_sort'})
+  @Type(() => Number)
+  groupSort?: number; // 任务集排序（可选）
+
+  @Expose({name: 'priority'})
+  @Type(() => Number)
+  priority?: number; // 任务优先级（可选）
+
+  @Expose({name: 'preset_task_tag_id'})
+  @Type(() => Number)
+  presetTaskTagId?: number; // 任务标签ID（可选）
 }

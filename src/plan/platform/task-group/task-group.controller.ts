@@ -35,6 +35,17 @@ export class PlatformTaskGroupController {
     return resource;
   }
 
+  @Get(':id')
+  @UseGuards(JwtAuthGuard, RoleGuard('backUser'))
+  async findById(@Param('id') id: number) {
+    const data = await this.service.findById(id);
+    return {                                     
+      code: HttpStatus.OK,
+      data: data,
+      res: '成功',
+    }; 
+  }
+
   //  管理任务与任务集
   @Post('connect-task/:id')
   @UseGuards(JwtAuthGuard, RoleGuard('backUser'))

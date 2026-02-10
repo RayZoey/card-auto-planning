@@ -251,7 +251,7 @@ enum TaskAnnexType {
 enum TaskTimingType {
   POMODORO //  番茄钟
   FREE_TIMING //  自由计时
-  UNTIMING //  不计时
+  UNTIMING //  不计时（废弃）
 
   @@map("task_timing_type")
 }

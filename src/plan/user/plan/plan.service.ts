@@ -828,6 +828,14 @@ export class UserPlanService {
         };
         await prisma.userTaskScheduler.create({ data: schedulerData });
       }
+
+      //  更新模版使用次数
+      await prisma.planTemplate.update({
+        where: { id: templateId },
+        data: {
+          total_use: { increment: 1 },
+        },
+      });
       return true;
     }, { timeout: 60000 });
   }

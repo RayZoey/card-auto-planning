@@ -34,6 +34,21 @@ export class PlatformTaskGroupService {
     return this.prismaService.platformTaskGroup.count();
   }
 
+  async findById(id: number) {
+    return this.prismaService.platformTaskGroup.findFirst({
+      where: {
+        id: id
+      },
+      include: {
+        PlatformTaskGroupAndTaskRelation: {
+          include: {
+            platform_task: true
+          }
+        }
+      }
+    });
+  }
+
   async create(name: string) {
     return this.prismaService.platformTaskGroup.create({
       data: {
