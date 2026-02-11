@@ -24,7 +24,7 @@ export class TimingSchedulerService {
 
 
   // 检测用户异常任务状态 每 60s 扫一次
-  // @Cron(CronExpression.EVERY_MINUTE)
+  @Cron(CronExpression.EVERY_MINUTE)
   async autoPauseStale() {
     try {
       const now = moment();
@@ -55,6 +55,16 @@ export class TimingSchedulerService {
           const oneHourInMinutes = 60;
           const limit = plannedOccupationTime + oneHourInMinutes;   // 计划+1小时
 
+          // 每次判断时都更新 actual_time 和 last_heartbeat_at，避免下次重复累加
+          // 更新后 actual_time = 总耗时，last_heartbeat_at = now，下次计算时 base 正确
+          await this.prismaService.userTask.update({
+            where: { id: task.id },
+            data: {
+              actual_time: totalActualTime,
+              last_heartbeat_at: now.toDate(),
+            },
+          });
+
           // 仅当满足以下两种之一才自动暂停，否则不操作
           const overByTotal = totalActualTime >= limit;   // 总耗时 >= 计划+1小时
           const overByBase = baseActualTime >= limit;     // 已入库 actual_time >= 计划+1小时
@@ -67,8 +77,8 @@ export class TimingSchedulerService {
             continue;
           }
 
-          // 暂停时把 last_heartbeat_at 到 now 的分钟数加入 actual_time
-          await this.pauseTask(task, minutesSinceLastHeartbeat, now.toDate());
+          // 暂停（actual_time 已更新为 totalActualTime，无需再加 segmentDuration）
+          await this.pauseTask(task, totalActualTime, now.toDate());
           this.logger.info(
             `任务 ${task.id} 超时未心跳，自动暂停。总耗时 ${totalActualTime}min，计划 ${plannedOccupationTime}min。`,
           );
@@ -80,7 +90,7 @@ export class TimingSchedulerService {
       this.logger.error(`autoPauseStale 失败: ${error.message}`, error.stack);
     }
   }
-  private async pauseTask(task: any, segmentDuration: number, pauseTime: Date) {
+  private async pauseTask(task: any, totalActualTime: number, pauseTime: Date) {
     return await this.prismaService.$transaction(async (tx) => {
       // 再次检查任务状态，避免并发修改
       const currentTask = await tx.userTask.findUnique({
@@ -97,7 +107,7 @@ export class TimingSchedulerService {
         where: { id: task.id },
         data: {
           status: TaskStatus.PAUSE,
-          actual_time: (task.actual_time || 0) + Math.max(0, segmentDuration),
+          actual_time: totalActualTime, // 已在 autoPauseStale 中更新，直接使用
           segment_start: null, // 重置段开始时间
         },
       });
@@ -124,12 +134,12 @@ export class TimingSchedulerService {
         },
       });
 
-      this.logger.info(`任务 ${task.id} 自动暂停，总耗时 ${Math.max(0, segmentDuration)}min，暂停时间 ${pauseTime}`);
+      this.logger.info(`任务 ${task.id} 自动暂停，总耗时 ${totalActualTime}min，暂停时间 ${pauseTime}`);
     });
   }
 
   //  每日3点自动关闭所有进行中的任务日，如果存在未完成的任务则顺延
-  // @Cron(CronExpression.EVERY_DAY_AT_3AM) // 每日凌晨3点执行
+  @Cron(CronExpression.EVERY_DAY_AT_3AM) // 每日凌晨3点执行
   async autoClosePreviousDayTasks() {
     console.log(2222)
     try {
