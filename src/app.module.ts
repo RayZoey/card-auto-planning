@@ -2,7 +2,7 @@
  * @Author: Ray lighthouseinmind@yeah.net
  * @Date: 2025-05-06 09:11:01
  * @LastEditors: Reflection lighthouseinmind@yeah.net
- * @LastEditTime: 2026-02-04 21:52:39
+ * @LastEditTime: 2026-02-11 23:39:16
  * @FilePath: /water/src/app.module.ts
  * @Description: 这是默认设置,请设置`customMade`, 打开koroFileHeader查看配置 进行设置: https://github.com/OBKoro1/koro1FileHeader/wiki/%E9%85%8D%E7%BD%AE
  */
@@ -23,6 +23,7 @@ import { TimingSchedulerModule } from './timing-scheduler/timing-scheduler.modul
 import { PlanModule } from './plan/plan.module';
 import { TeacherModule } from './teacher/teacher.module';
 import { InviteCodeModule } from './invite-code/invite-code.module';
+import { AdminModule } from './admin/admin.module';
 
 @Module({
   imports: [
@@ -36,6 +37,7 @@ import { InviteCodeModule } from './invite-code/invite-code.module';
     PlanModule,
     TimingSchedulerModule,
     InviteCodeModule,
+    AdminModule,
     WinstonModule.forRoot({
     // 所有环境统一输出 error、warn、info；可通过 LOG_LEVEL 改为 debug 等
     level: process.env.LOG_LEVEL || 'info',

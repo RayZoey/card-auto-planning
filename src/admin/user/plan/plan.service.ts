@@ -2,31 +2,28 @@
  * @Author: Ray lighthouseinmind@yeah.net
  * @Date: 2025-07-08 14:59:59
  * @LastEditors: Reflection lighthouseinmind@yeah.net
- * @LastEditTime: 2026-02-11 21:00:21
+ * @LastEditTime: 2026-02-11 23:23:42
  * @FilePath: /card-backend/src/card/pdf-print-info/pdf-print-info.service.ts
  * @Description: 这是默认设置,请设置`customMade`, 打开koroFileHeader查看配置 进行设置: https://github.com/OBKoro1/koro1FileHeader/wiki/%E9%85%8D%E7%BD%AE
  */
-import {forwardRef, HttpException, HttpStatus, Inject, Injectable} from '@nestjs/common';
+import {forwardRef, Inject, Injectable} from '@nestjs/common';
 import {PrismaService} from '@src/common/prisma.service';
-import {BaseService} from '@src/base/base.service';
 import {QueryFilter} from '@src/common/query-filter';
 import {QueryConditionParser} from '@src/common/query-condition-parser';
 import { UserPlanQueryCondition } from './plan.query-condition';
 import { UserPlanCreateDto } from './plan.create.dto';
 import { UserPlanUpdateDto } from './plan.update.dto';
 import { PlanStatus, TaskStatus } from '@prisma/client';
-import { AutoPlanningService } from '../auto-planning/planning.service';
-import { UserTaskService } from '../task/task.service';
+import { AdminUserTaskService } from '../task/task.service';
 const moment = require('moment');
 
 @Injectable()
-export class UserPlanService {
+export class AdminUserPlanService {
   constructor(
     private readonly prismaService: PrismaService,
     private readonly queryConditionParser: QueryConditionParser,
-    private readonly autoPlanningService: AutoPlanningService,
-    @Inject(forwardRef(() => UserTaskService))
-    private readonly userTaskService: UserTaskService,
+    @Inject(forwardRef(() => AdminUserTaskService))
+    private readonly adminUserTaskService: AdminUserTaskService,
   ) {}
 
   //  获取下一个计划日可提前任务列表
@@ -650,7 +647,7 @@ export class UserPlanService {
     });
 
     // 第二步：基于新的日上限做自动规划（使用公共 replanFromDay，确保与新增/删除任务后的逻辑一致）
-    await this.userTaskService.replanFromDay(this.prismaService, planId, dateNo);
+    await this.adminUserTaskService.replanFromDay(this.prismaService, planId, dateNo);
 
     // 第三步：清理尾部空天，并同步 total_days / limit_hour（以实际最大 date_no 为准）
     const lastScheduler = await this.prismaService.userTaskScheduler.findFirst({

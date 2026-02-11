@@ -2,7 +2,7 @@
  * @Author: Reflection lighthouseinmind@yeah.net
  * @Date: 2026-02-04 21:44:54
  * @LastEditors: Reflection lighthouseinmind@yeah.net
- * @LastEditTime: 2026-02-08 17:09:27
+ * @LastEditTime: 2026-02-11 23:10:58
  * @FilePath: /card-auto-planning/src/invite-code/invite-code.controller.ts
  * @Description: 这是默认设置,请设置`customMade`, 打开koroFileHeader查看配置 进行设置: https://github.com/OBKoro1/koro1FileHeader/wiki/%E9%85%8D%E7%BD%AE
  */
@@ -21,7 +21,7 @@ export class InviteCodeController {
   constructor(private readonly service: InviteCodeService, private offsetCalculator: OffsetCalculator) {}
 
   @Get()
-  // @UseGuards(JwtAuthGuard, RoleGuard('backUser'))
+  @UseGuards(JwtAuthGuard, RoleGuard('backUser'))
   async list(@Req() request: Request, @Query() pagination: PaginationDto, @Query() queryDto: InviteCodeQuery) {
     const offset = this.offsetCalculator.calculate(pagination.page, pagination.pageSize);
     const limit = pagination.pageSize;
