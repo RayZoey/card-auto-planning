@@ -2,7 +2,7 @@
  * @Author: Ray lighthouseinmind@yeah.net
  * @Date: 2025-07-08 14:59:59
  * @LastEditors: Reflection lighthouseinmind@yeah.net
- * @LastEditTime: 2026-02-11 23:34:58
+ * @LastEditTime: 2026-02-12 00:09:48
  * @FilePath: /card-auto-planning/src/plan/platform/plan-template/plan-template.controller.ts
  * @Description: 这是默认设置,请设置`customMade`, 打开koroFileHeader查看配置 进行设置: https://github.com/OBKoro1/koro1FileHeader/wiki/%E9%85%8D%E7%BD%AE
  */
@@ -147,7 +147,7 @@ export class AdminUserTaskController {
   //  处理当日未完成任务（跳过或延期）
   @Post('process-day-tasks')
   @UseGuards(JwtAuthGuard, RoleGuard('backUser'))
-  async processDayTasks(@Req() req,  @Body('mini_user_id') userId: number, @Body() dto: AdminProcessDayTasksDto) {
+  async processDayTasks(@Req() req, @Body('mini_user_id') userId: number, @Body() dto: AdminProcessDayTasksDto) {
     const res = await this.service.processDayTasks(
       userId,
       dto.plan_id,
@@ -165,8 +165,7 @@ export class AdminUserTaskController {
   //  获取计划的每日进度信息
   @Get('plan-day-progress/:planId')
   @UseGuards(JwtAuthGuard, RoleGuard('backUser'))
-  async getPlanDayProgress(@Req() req, @Param('planId') planId: number, @Query('need_task') needTask: boolean) {
-    const userId = req.user.accountId;
+  async getPlanDayProgress(@Req() req, @Body('mini_user_id') userId: number, @Param('planId') planId: number, @Query('need_task') needTask: boolean) {
     const res = await this.service.getPlanDayProgress(userId, planId, needTask);
     return res;
   }
