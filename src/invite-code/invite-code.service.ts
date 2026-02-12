@@ -26,11 +26,10 @@ export class InviteCodeService {
         id: 'desc',
       },
       include: {
-        User: {
+        used_by_user: {
           select: {
             id: true,
-            display_name: true,
-            name: true,
+            username: true,
             avatar: true,
           },
         },
