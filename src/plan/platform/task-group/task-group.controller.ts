@@ -60,8 +60,8 @@ export class PlatformTaskGroupController {
 
   @Post()
   @UseGuards(JwtAuthGuard, RoleGuard('backUser'))
-  async create(@Body('name') name: string) {
-    const res = await this.service.create(name);
+  async create(@Body('name') name: string, @Body('background') background: string) {
+    const res = await this.service.create(name, background);
     return {                                     
       code: HttpStatus.CREATED,
       data: res,

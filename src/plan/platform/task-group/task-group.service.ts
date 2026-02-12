@@ -49,10 +49,11 @@ export class PlatformTaskGroupService {
     });
   }
 
-  async create(name: string) {
+  async create(name: string, background: string) {
     return this.prismaService.platformTaskGroup.create({
       data: {
-        name: name
+        name: name,
+        background: background
       }
     });
   }

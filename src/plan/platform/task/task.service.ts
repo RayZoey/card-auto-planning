@@ -41,6 +41,7 @@ export class PlatformTaskService {
               select: {
                 id: true,
                 name: true,
+                background: true,
               },
             },
           },
