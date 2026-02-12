@@ -25,6 +25,16 @@ export class InviteCodeService {
       orderBy: {
         id: 'desc',
       },
+      include: {
+        User: {
+          select: {
+            id: true,
+            display_name: true,
+            name: true,
+            avatar: true,
+          },
+        },
+      },
       where: filter,
     });
   }
