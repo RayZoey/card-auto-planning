@@ -79,6 +79,60 @@ export class PlatformTaskGroupService {
   }
 
   async delete(id: number) {
+    // 1. 检查任务集是否存在
+    const group = await this.prismaService.platformTaskGroup.findUnique({
+      where: { id },
+      include: {
+        PlatformTaskGroupAndTaskRelation: {
+          select: {
+            platform_task_id: true,
+          },
+        },
+      },
+    });
+
+    if (!group) {
+      throw new HttpException('平台任务集不存在', HttpStatus.NOT_FOUND);
+    }
+
+    // 2. 检查是否被平台模版引用（PlanTemplateDetail 中是否存在该任务集）
+    const usedCount = await this.prismaService.planTemplateDetail.count({
+      where: {
+        platform_task_group_id: id,
+      },
+    });
+
+    if (usedCount > 0) {
+      throw new HttpException('该平台任务集已被计划模版引用，无法删除', HttpStatus.BAD_REQUEST);
+    }
+
+    // 3. 未被引用：删除任务集及其下任务和关联关系
+    await this.prismaService.$transaction(async (tx) => {
+      const taskIds = group.PlatformTaskGroupAndTaskRelation.map((r) => r.platform_task_id);
+
+      if (taskIds.length > 0) {
+        // 3.1 删除该任务集与任务的关系
+        await tx.platformTaskGroupAndTaskRelation.deleteMany({
+          where: {
+            platform_task_group_id: id,
+          },
+        });
+
+        // 3.2 删除这些平台任务本身
+        await tx.platformTask.deleteMany({
+          where: {
+            id: { in: taskIds },
+          },
+        });
+      }
+
+      // 3.3 删除任务集
+      await tx.platformTaskGroup.delete({
+        where: { id },
+      });
+    });
+
+    return true;
   }
 
   //  关联任务集与任务
