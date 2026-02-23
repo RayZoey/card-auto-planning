@@ -271,55 +271,132 @@ export class PlatformTaskService {
       throw new Error('该任务不是任务集任务，无法更新任务集顺序');
     }
 
+    const relation = task.PlatformTaskGroupAndTaskRelation[0] ?? null;
+
     return await this.prismaService.$transaction(async (prisma) => {
-      // 3. 更新所有使用该任务的计划模板详情中的 group_sort
-      for (const detail of task.PlanTemplateDetail) {
-        const oldGroupSort = detail.group_sort;
-        if (oldGroupSort === null) continue;
+      let groupId: number | null = null;
 
-        // 3.1 如果新顺序大于旧顺序，需要将中间的任务向后移动
-        if (newGroupSort > oldGroupSort) {
-          await prisma.planTemplateDetail.updateMany({
+      // 3. 先以「平台任务集与任务关系」为唯一真源，调整该任务在任务集中的 group_sort
+      if (relation) {
+        groupId = relation.platform_task_group_id as number;
+        const oldGroupSort = relation.group_sort as number | null;
+
+        if (oldGroupSort != null && newGroupSort !== oldGroupSort) {
+          if (newGroupSort > oldGroupSort) {
+            // 将 (old, new] 区间内的任务整体后移一位
+            await prisma.platformTaskGroupAndTaskRelation.updateMany({
+              where: {
+                platform_task_group_id: groupId,
+                group_sort: {
+                  gt: oldGroupSort,
+                  lte: newGroupSort,
+                },
+              },
+              data: {
+                group_sort: { decrement: 1 },
+              },
+            });
+          } else if (newGroupSort < oldGroupSort) {
+            // 将 [new, old) 区间内的任务整体前移一位
+            await prisma.platformTaskGroupAndTaskRelation.updateMany({
+              where: {
+                platform_task_group_id: groupId,
+                group_sort: {
+                  gte: newGroupSort,
+                  lt: oldGroupSort,
+                },
+              },
+              data: {
+                group_sort: { increment: 1 },
+              },
+            });
+          }
+
+          // 更新当前任务在任务集关系表中的 group_sort
+          await prisma.platformTaskGroupAndTaskRelation.update({
             where: {
-              plan_template_id: detail.plan_template_id,
-              platform_task_group_id: detail.platform_task_group_id,
-              group_sort: {
-                gt: oldGroupSort,
-                lte: newGroupSort,
+              platform_task_group_id_platform_task_id: {
+                platform_task_group_id: groupId,
+                platform_task_id: id,
               },
             },
             data: {
-              group_sort: { decrement: 1 },
+              group_sort: newGroupSort,
             },
           });
         }
-        // 3.2 如果新顺序小于旧顺序，需要将中间的任务向前移动
-        else if (newGroupSort < oldGroupSort) {
-          await prisma.planTemplateDetail.updateMany({
-            where: {
-              plan_template_id: detail.plan_template_id,
-              platform_task_group_id: detail.platform_task_group_id,
-              group_sort: {
-                gte: newGroupSort,
-                lt: oldGroupSort,
-              },
-            },
-            data: {
-              group_sort: { increment: 1 },
-            },
-          });
-        }
-        // 3.3 如果新顺序等于旧顺序，不需要调整
+      }
 
-        // 3.4 更新当前任务的 group_sort
-        await prisma.planTemplateDetail.update({
+      // 4. 再把所有使用该任务集的模版里的 group_sort 同步为「任务集关系表」中的顺序
+      if (groupId != null) {
+        const groupRelations = await prisma.platformTaskGroupAndTaskRelation.findMany({
           where: {
-            id: detail.id,
+            platform_task_group_id: groupId,
           },
-          data: {
-            group_sort: newGroupSort,
+          select: {
+            platform_task_id: true,
+            group_sort: true,
           },
         });
+
+        if (groupRelations.length > 0) {
+          for (const rel of groupRelations) {
+            await prisma.planTemplateDetail.updateMany({
+              where: {
+                platform_task_group_id: groupId,
+                platform_task_id: rel.platform_task_id,
+              },
+              data: {
+                group_sort: rel.group_sort,
+              },
+            });
+          }
+        }
+      } else {
+        // 防御性兜底：没有关系记录时，退回原来的「只改模版」逻辑
+        for (const detail of task.PlanTemplateDetail) {
+          const oldGroupSort = detail.group_sort;
+          if (oldGroupSort === null) continue;
+
+          if (newGroupSort > oldGroupSort) {
+            await prisma.planTemplateDetail.updateMany({
+              where: {
+                plan_template_id: detail.plan_template_id,
+                platform_task_group_id: detail.platform_task_group_id,
+                group_sort: {
+                  gt: oldGroupSort,
+                  lte: newGroupSort,
+                },
+              },
+              data: {
+                group_sort: { decrement: 1 },
+              },
+            });
+          } else if (newGroupSort < oldGroupSort) {
+            await prisma.planTemplateDetail.updateMany({
+              where: {
+                plan_template_id: detail.plan_template_id,
+                platform_task_group_id: detail.platform_task_group_id,
+                group_sort: {
+                  gte: newGroupSort,
+                  lt: oldGroupSort,
+                },
+              },
+              data: {
+                group_sort: { increment: 1 },
+              },
+            });
+          }
+
+          await prisma.planTemplateDetail.update({
+            where: {
+              id: detail.id,
+            },
+            data: {
+              group_sort: newGroupSort,
+            },
+          });
+        }
       }
 
       return true;
