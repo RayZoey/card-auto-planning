@@ -2,7 +2,7 @@
  * @Author: Ray lighthouseinmind@yeah.net
  * @Date: 2025-07-08 14:59:59
  * @LastEditors: Reflection lighthouseinmind@yeah.net
- * @LastEditTime: 2026-02-04 20:53:03
+ * @LastEditTime: 2026-02-25 17:56:47
  * @FilePath: /card-backend/src/card/pdf-print-info/pdf-print-info.service.ts
  * @Description: 这是默认设置,请设置`customMade`, 打开koroFileHeader查看配置 进行设置: https://github.com/OBKoro1/koro1FileHeader/wiki/%E9%85%8D%E7%BD%AE
  */
@@ -292,7 +292,7 @@ export class UserTaskService {
       },
     });
     if (previousDayTracks.length > 0) {
-      throw new HttpException('第' + dateNo + '天之前有未关闭的日期，无法获取学习统计', HttpStatus.BAD_REQUEST);
+      throw new Error('第' + dateNo + '天之前有未关闭的日期，无法获取学习统计');
     }
     //  检查dateNo是否存在
     const existingTrack = await this.prismaService.userPlanDayTrack.findFirst({
@@ -302,7 +302,7 @@ export class UserTaskService {
       },
     });
     if (!existingTrack) {
-      throw new HttpException('第' + dateNo + '天不存在，无法获取学习统计', HttpStatus.BAD_REQUEST);
+      throw new Error('第' + dateNo + '天不存在，无法获取学习统计');
     }
     //  获取今日每个任务的计划耗时与实际耗时以及所属任务集信息
     const todayTasks = await this.prismaService.userTaskScheduler.findMany({
@@ -342,7 +342,7 @@ export class UserTaskService {
       },
     });
     if (previousDayTracks.length > 0) {
-      throw new HttpException('第' + dateNo + '天之前有未关闭的日期，无法打卡', HttpStatus.BAD_REQUEST);
+      throw new Error('第' + dateNo + '天之前有未关闭的日期，无法打卡');
     }
     //  检查当日是否已经打卡
     const existingTrackCheck = await this.prismaService.userPlanDayTrack.findFirst({
@@ -353,7 +353,7 @@ export class UserTaskService {
       },
     });
     if (existingTrackCheck) {
-      throw new HttpException('第' + dateNo + '天已经打卡', HttpStatus.BAD_REQUEST);
+      throw new Error('第' + dateNo + '天已经打卡');
     }
 
     // 处理 annex 和 learning_experience，如果是对象则转为字符串
@@ -369,7 +369,7 @@ export class UserTaskService {
         },
       });
       if (!plan) {
-        throw new HttpException('计划不存在或不属于当前用户', HttpStatus.BAD_REQUEST);
+        throw new Error('计划不存在或不属于当前用户');
       }
 
       // 获取该日所有未完成的任务
@@ -386,7 +386,7 @@ export class UserTaskService {
 
       // 如果有未完成的任务，不允许打卡
       if (dayTasks.length > 0) {
-        throw new HttpException('当日还有未完成的任务，无法打卡', HttpStatus.BAD_REQUEST);
+        throw new Error('当日还有未完成的任务，无法打卡');
       }
 
       // 获取该日所有任务（用于统计）
@@ -458,7 +458,7 @@ export class UserTaskService {
         },
       });
       if (!plan) {
-        throw new HttpException('计划不存在或不属于当前用户', HttpStatus.BAD_REQUEST);
+        throw new Error('计划不存在或不属于当前用户');
       }
 
       // 获取该日所有未完成/未跳过的任务
@@ -475,10 +475,7 @@ export class UserTaskService {
 
       // 验证任务数量是否相等
       if (tasks.length !== incompleteTasks.length) {
-        throw new HttpException(
-          `任务数量不匹配：当前有 ${incompleteTasks.length} 个未完成任务，但提供了 ${tasks.length} 个任务处理信息`,
-          HttpStatus.BAD_REQUEST
-        );
+        throw new Error(`任务数量不匹配：当前有 ${incompleteTasks.length} 个未完成任务，但提供了 ${tasks.length} 个任务处理信息`);
       }
 
       // 验证所有任务ID是否都在未完成任务列表中
@@ -487,7 +484,7 @@ export class UserTaskService {
       
       if (incompleteTaskIds.size !== providedTaskIds.size || 
           [...incompleteTaskIds].some(id => !providedTaskIds.has(id))) {
-        throw new HttpException('提供的任务ID与当日未完成任务不匹配', HttpStatus.BAD_REQUEST);
+        throw new Error('提供的任务ID与当日未完成任务不匹配');
       }
 
       const nextDayNo = dateNo + 1;
@@ -964,7 +961,7 @@ export class UserTaskService {
     second: { name: string; minutes: number },
   ) {
     if (first.minutes <= 0 || second.minutes <= 0) {
-      throw new HttpException('拆分后的任务时长必须大于 0 分钟', HttpStatus.BAD_REQUEST);
+      throw new Error('拆分后的任务时长必须大于 0 分钟');
     }
 
     return this.prismaService.$transaction(async (tx) => {
@@ -975,19 +972,18 @@ export class UserTaskService {
       });
 
       if (!scheduler || !scheduler.task) {
-        throw new HttpException('任务不存在', HttpStatus.BAD_REQUEST);
+        throw new Error('任务不存在');
       }
       if (scheduler.task.user_id !== userId) {
-        throw new HttpException('无权操作该任务', HttpStatus.FORBIDDEN);
+        throw new Error('无权操作该任务');
       }
 
       const task = scheduler.task;
 
       // 校验拆分时长总和是否与原任务一致，避免计划统计混乱
       if (first.minutes + second.minutes !== task.occupation_time) {
-        throw new HttpException(
-          `两段时长之和必须等于原任务时长（${task.occupation_time} 分钟）`,
-          HttpStatus.BAD_REQUEST,
+        throw new Error(
+          `两段时长之和必须等于原任务时长（${task.occupation_time} 分钟）`
         );
       }
 

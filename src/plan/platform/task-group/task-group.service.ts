@@ -2,7 +2,7 @@
  * @Author: Ray lighthouseinmind@yeah.net
  * @Date: 2025-07-08 14:59:59
  * @LastEditors: Reflection lighthouseinmind@yeah.net
- * @LastEditTime: 2026-02-25 10:24:53
+ * @LastEditTime: 2026-02-25 17:58:24
  * @FilePath: /card-backend/src/card/pdf-print-info/pdf-print-info.service.ts
  * @Description: 这是默认设置,请设置`customMade`, 打开koroFileHeader查看配置 进行设置: https://github.com/OBKoro1/koro1FileHeader/wiki/%E9%85%8D%E7%BD%AE
  */
@@ -92,7 +92,7 @@ export class PlatformTaskGroupService {
     });
 
     if (!group) {
-      throw new HttpException('平台任务集不存在', HttpStatus.NOT_FOUND);
+      throw new Error('平台任务集不存在');
     }
 
     // 2. 检查是否被平台模版引用（PlanTemplateDetail 中是否存在该任务集）
@@ -103,7 +103,7 @@ export class PlatformTaskGroupService {
     });
 
     if (usedCount > 0) {
-      throw new HttpException('该平台任务集已被计划模版引用，无法删除', HttpStatus.BAD_REQUEST);
+      throw new Error('该平台任务集已被计划模版引用，无法删除');
     }
 
     // 3. 未被引用：删除任务集及其下任务和关联关系

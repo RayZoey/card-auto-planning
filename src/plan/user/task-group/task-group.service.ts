@@ -2,7 +2,7 @@
  * @Author: Ray lighthouseinmind@yeah.net
  * @Date: 2025-07-08 14:59:59
  * @LastEditors: Reflection lighthouseinmind@yeah.net
- * @LastEditTime: 2026-02-06 12:07:53
+ * @LastEditTime: 2026-02-25 17:58:13
  * @FilePath: /card-backend/src/card/pdf-print-info/pdf-print-info.service.ts
  * @Description: 这是默认设置,请设置`customMade`, 打开koroFileHeader查看配置 进行设置: https://github.com/OBKoro1/koro1FileHeader/wiki/%E9%85%8D%E7%BD%AE
  */
@@ -48,7 +48,7 @@ export class UserTaskGroupService {
     });
 
     if (!group) {
-      throw new HttpException('任务集不存在或不属于当前用户', HttpStatus.BAD_REQUEST);
+      throw new Error('任务集不存在或不属于当前用户');
     }
 
     return this.prismaService.userTaskGroup.update({
