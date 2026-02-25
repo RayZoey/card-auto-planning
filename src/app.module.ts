@@ -2,7 +2,7 @@
  * @Author: Ray lighthouseinmind@yeah.net
  * @Date: 2025-05-06 09:11:01
  * @LastEditors: Reflection lighthouseinmind@yeah.net
- * @LastEditTime: 2026-02-11 23:39:16
+ * @LastEditTime: 2026-02-25 10:23:58
  * @FilePath: /water/src/app.module.ts
  * @Description: 这是默认设置,请设置`customMade`, 打开koroFileHeader查看配置 进行设置: https://github.com/OBKoro1/koro1FileHeader/wiki/%E9%85%8D%E7%BD%AE
  */
@@ -40,7 +40,7 @@ import { AdminModule } from './admin/admin.module';
     AdminModule,
     WinstonModule.forRoot({
     // 所有环境统一输出 error、warn、info；可通过 LOG_LEVEL 改为 debug 等
-    level: process.env.LOG_LEVEL || 'info',
+    // level: process.env.LOG_LEVEL || 'info',
     format: winston.format.combine(
       winston.format.timestamp(),
       winston.format.errors({stack: true}), // 显示堆栈信息

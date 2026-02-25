@@ -2,7 +2,7 @@
  * @Author: Ray lighthouseinmind@yeah.net
  * @Date: 2025-07-08 14:59:59
  * @LastEditors: Reflection lighthouseinmind@yeah.net
- * @LastEditTime: 2026-02-06 12:08:36
+ * @LastEditTime: 2026-02-25 10:24:53
  * @FilePath: /card-backend/src/card/pdf-print-info/pdf-print-info.service.ts
  * @Description: 这是默认设置,请设置`customMade`, 打开koroFileHeader查看配置 进行设置: https://github.com/OBKoro1/koro1FileHeader/wiki/%E9%85%8D%E7%BD%AE
  */
@@ -136,7 +136,7 @@ export class PlatformTaskGroupService {
   }
 
   //  关联任务集与任务
-  async connectTask(groupId: number, taskArr: []){
+  async connectTask(groupId: number, taskArr: [{id: number, group_sort: number}]){
     const group = await this.prismaService.platformTaskGroup.findFirst({
       where: {
         id: groupId
@@ -151,11 +151,13 @@ export class PlatformTaskGroupService {
         platform_task_group_id: groupId
       }
     });
+    console.log(taskArr)
     //  建立关联关系
     return await this.prismaService.platformTaskGroupAndTaskRelation.createMany({
-      data: taskArr.map(taskId => ({
+      data: taskArr.map(task => ({
         platform_task_group_id: groupId,
-        platform_task_id: taskId,
+        platform_task_id: task.id,
+        group_sort: task.group_sort
       })),
       skipDuplicates: true,
     });
