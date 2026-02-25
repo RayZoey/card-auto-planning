@@ -2,7 +2,7 @@
  * @Author: Ray lighthouseinmind@yeah.net
  * @Date: 2025-07-08 14:59:59
  * @LastEditors: Reflection lighthouseinmind@yeah.net
- * @LastEditTime: 2026-02-25 17:56:47
+ * @LastEditTime: 2026-02-25 22:49:43
  * @FilePath: /card-backend/src/card/pdf-print-info/pdf-print-info.service.ts
  * @Description: 这是默认设置,请设置`customMade`, 打开koroFileHeader查看配置 进行设置: https://github.com/OBKoro1/koro1FileHeader/wiki/%E9%85%8D%E7%BD%AE
  */
@@ -609,44 +609,44 @@ export class UserTaskService {
       }
 
       // 所有任务处理完毕后，标记当日为已完成
-      const nowFinish = new Date();
-      const existingTrack = await tx.userPlanDayTrack.findFirst({
-        where: {
-          plan_id: planId,
-          date_no: dateNo,
-        },
-      });
+      // const nowFinish = new Date();
+      // const existingTrack = await tx.userPlanDayTrack.findFirst({
+      //   where: {
+      //     plan_id: planId,
+      //     date_no: dateNo,
+      //   },
+      // });
 
-      if (existingTrack) {
-        await tx.userPlanDayTrack.update({
-          where: { id: existingTrack.id },
-          data: {
-            is_complete: true,
-            completed_at: nowFinish,
-          },
-        });
-      } else {
-        const todayTasksForStat = await tx.userTaskScheduler.findMany({
-          where: {
-            plan_id: planId,
-            date_no: dateNo,
-          },
-          include: { task: true },
-        });
-        const totalTime = todayTasksForStat.reduce(
-          (sum, item) => sum + (item.task?.occupation_time || 0),
-          0
-        );
-        await tx.userPlanDayTrack.create({
-          data: {
-            plan_id: planId,
-            date_no: dateNo,
-            is_complete: true,
-            completed_at: nowFinish,
-            total_time: totalTime,
-          },
-        });
-      }
+      // if (existingTrack) {
+      //   await tx.userPlanDayTrack.update({
+      //     where: { id: existingTrack.id },
+      //     data: {
+      //       is_complete: true,
+      //       completed_at: nowFinish,
+      //     },
+      //   });
+      // } else {
+      //   const todayTasksForStat = await tx.userTaskScheduler.findMany({
+      //     where: {
+      //       plan_id: planId,
+      //       date_no: dateNo,
+      //     },
+      //     include: { task: true },
+      //   });
+      //   const totalTime = todayTasksForStat.reduce(
+      //     (sum, item) => sum + (item.task?.occupation_time || 0),
+      //     0
+      //   );
+      //   await tx.userPlanDayTrack.create({
+      //     data: {
+      //       plan_id: planId,
+      //       date_no: dateNo,
+      //       is_complete: true,
+      //       completed_at: nowFinish,
+      //       total_time: totalTime,
+      //     },
+      //   });
+      // }
       
 
       return {
