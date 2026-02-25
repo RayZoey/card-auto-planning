@@ -2,7 +2,7 @@
  * @Author: Ray lighthouseinmind@yeah.net
  * @Date: 2025-07-08 14:59:59
  * @LastEditors: Reflection lighthouseinmind@yeah.net
- * @LastEditTime: 2025-11-09 21:09:04
+ * @LastEditTime: 2026-02-25 10:30:09
  * @FilePath: /card-backend/src/card/pdf-print-info/pdf-print-info.service.ts
  * @Description: 这是默认设置,请设置`customMade`, 打开koroFileHeader查看配置 进行设置: https://github.com/OBKoro1/koro1FileHeader/wiki/%E9%85%8D%E7%BD%AE
  */
@@ -328,76 +328,76 @@ export class PlatformTaskService {
       }
 
       // 4. 再把所有使用该任务集的模版里的 group_sort 同步为「任务集关系表」中的顺序
-      if (groupId != null) {
-        const groupRelations = await prisma.platformTaskGroupAndTaskRelation.findMany({
-          where: {
-            platform_task_group_id: groupId,
-          },
-          select: {
-            platform_task_id: true,
-            group_sort: true,
-          },
-        });
+      // if (groupId != null) {
+      //   const groupRelations = await prisma.platformTaskGroupAndTaskRelation.findMany({
+      //     where: {
+      //       platform_task_group_id: groupId,
+      //     },
+      //     select: {
+      //       platform_task_id: true,
+      //       group_sort: true,
+      //     },
+      //   });
 
-        if (groupRelations.length > 0) {
-          for (const rel of groupRelations) {
-            await prisma.planTemplateDetail.updateMany({
-              where: {
-                platform_task_group_id: groupId,
-                platform_task_id: rel.platform_task_id,
-              },
-              data: {
-                group_sort: rel.group_sort,
-              },
-            });
-          }
-        }
-      } else {
-        // 防御性兜底：没有关系记录时，退回原来的「只改模版」逻辑
-        for (const detail of task.PlanTemplateDetail) {
-          const oldGroupSort = detail.group_sort;
-          if (oldGroupSort === null) continue;
+      //   if (groupRelations.length > 0) {
+      //     for (const rel of groupRelations) {
+      //       await prisma.planTemplateDetail.updateMany({
+      //         where: {
+      //           platform_task_group_id: groupId,
+      //           platform_task_id: rel.platform_task_id,
+      //         },
+      //         data: {
+      //           group_sort: rel.group_sort,
+      //         },
+      //       });
+      //     }
+      //   }
+      // } else {
+      //   // 防御性兜底：没有关系记录时，退回原来的「只改模版」逻辑
+      //   for (const detail of task.PlanTemplateDetail) {
+      //     const oldGroupSort = detail.group_sort;
+      //     if (oldGroupSort === null) continue;
 
-          if (newGroupSort > oldGroupSort) {
-            await prisma.planTemplateDetail.updateMany({
-              where: {
-                plan_template_id: detail.plan_template_id,
-                platform_task_group_id: detail.platform_task_group_id,
-                group_sort: {
-                  gt: oldGroupSort,
-                  lte: newGroupSort,
-                },
-              },
-              data: {
-                group_sort: { decrement: 1 },
-              },
-            });
-          } else if (newGroupSort < oldGroupSort) {
-            await prisma.planTemplateDetail.updateMany({
-              where: {
-                plan_template_id: detail.plan_template_id,
-                platform_task_group_id: detail.platform_task_group_id,
-                group_sort: {
-                  gte: newGroupSort,
-                  lt: oldGroupSort,
-                },
-              },
-              data: {
-                group_sort: { increment: 1 },
-              },
-            });
-          }
+      //     if (newGroupSort > oldGroupSort) {
+      //       await prisma.planTemplateDetail.updateMany({
+      //         where: {
+      //           plan_template_id: detail.plan_template_id,
+      //           platform_task_group_id: detail.platform_task_group_id,
+      //           group_sort: {
+      //             gt: oldGroupSort,
+      //             lte: newGroupSort,
+      //           },
+      //         },
+      //         data: {
+      //           group_sort: { decrement: 1 },
+      //         },
+      //       });
+      //     } else if (newGroupSort < oldGroupSort) {
+      //       await prisma.planTemplateDetail.updateMany({
+      //         where: {
+      //           plan_template_id: detail.plan_template_id,
+      //           platform_task_group_id: detail.platform_task_group_id,
+      //           group_sort: {
+      //             gte: newGroupSort,
+      //             lt: oldGroupSort,
+      //           },
+      //         },
+      //         data: {
+      //           group_sort: { increment: 1 },
+      //         },
+      //       });
+      //     }
 
-          await prisma.planTemplateDetail.update({
-            where: {
-              id: detail.id,
-            },
-            data: {
-              group_sort: newGroupSort,
-            },
-          });
-        }
-      }
+      //     await prisma.planTemplateDetail.update({
+      //       where: {
+      //         id: detail.id,
+      //       },
+      //       data: {
+      //         group_sort: newGroupSort,
+      //       },
+      //     });
+      //   }
+      // }
 
       return true;
     });
