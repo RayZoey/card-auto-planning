@@ -184,6 +184,34 @@ export class PlatformPlanTemplateService {
     }
   }
 
+  //  禁用平台计划模版
+  async disable(id: number) {
+    const template = await this.prismaService.planTemplate.findFirst({
+      where: { id },
+    });
+    if (!template) {
+      throw new Error('未找到该计划模版信息');
+    }
+    return this.prismaService.planTemplate.update({
+      where: { id },
+      data: { is_enable: false },
+    });
+  }
+
+  //  启用平台计划模版
+  async enable(id: number) {
+    const template = await this.prismaService.planTemplate.findFirst({
+      where: { id },
+    });
+    if (!template) {
+      throw new Error('未找到该计划模版信息');
+    }
+    return this.prismaService.planTemplate.update({
+      where: { id },
+      data: { is_enable: true },
+    });
+  }
+
   async delete(id: number) {
   }
 

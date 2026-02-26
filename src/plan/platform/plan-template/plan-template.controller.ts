@@ -105,6 +105,30 @@ export class PlatformPlanTemplateController {
     }; 
   }
 
+  //  禁用平台计划模版
+  @Put('/disable/:id')
+  @UseGuards(JwtAuthGuard, RoleGuard('backUser'))
+  async disable(@Param('id') id: number) {
+    const res = await this.service.disable(id);
+    return {
+      code: HttpStatus.OK,
+      data: res,
+      res: '成功',
+    };
+  }
+
+  //  启用平台计划模版
+  @Put('/enable/:id')
+  @UseGuards(JwtAuthGuard, RoleGuard('backUser'))
+  async enable(@Param('id') id: number) {
+    const res = await this.service.enable(id);
+    return {
+      code: HttpStatus.OK,
+      data: res,
+      res: '成功',
+    };
+  }
+
   // @Delete(':id')
   // @UseGuards(JwtAuthGuard, RoleGuard('backUser'))
   // async delete(@Param('id') id: number) {
