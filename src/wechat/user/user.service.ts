@@ -192,7 +192,7 @@ export class UserService {
       });
     }
     const token = await axios
-      .post('http://127.0.0.1:3001/auth/access-tokens', {
+      .post('http://api.zikanfs.cn/auto/auth/access-tokens', {
         ip: 'null',
         username: res['openid'],
         password: null,
